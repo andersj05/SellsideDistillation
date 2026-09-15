@@ -1,0 +1,100 @@
+# Security Review: SellsideDistillation
+
+## Scope
+
+All 36 tracked files at 32cf35e15d482da683a39a9b04b5e5a5b109f047 reviewed through independent baseline, focused source-boundary review and parent verification.
+
+- Scan mode: repository
+- Target kind: git_revision
+- Target ID: target_sha256_6e61df369015bfdd0005371eaf47017af5b4042112e09473f63933a91b231bf4
+- Revision: 32cf35e15d482da683a39a9b04b5e5a5b109f047
+- Inventory strategy: repository
+- Included paths: .
+- Excluded paths: none
+- Runtime or test status: Application code was not executed during the security scan.
+- Artifacts reviewed: .gitignore, .python-version, README.md, configs/experiments/fixture_smoke.json, configs/lab.toml, data/incoming/.gitkeep, docs/data_dictionary.md, docs/decision_log.md, docs/implementation_status.md, docs/research_register.md, equity-research-agent-lab-handoff.md, fixtures/discovery/report.md, fixtures/earnings.json, fixtures/evaluator/answers.json, playbooks/generic/v1.json, pyproject.toml, research_lab/__init__.py, research_lab/__main__.py, research_lab/adapter.py, research_lab/budget.py, research_lab/cli.py, research_lab/corpus.py, research_lab/evaluation.py, research_lab/evidence.py, research_lab/finance.py, research_lab/fixtures.py, research_lab/playbooks.py, research_lab/rendering.py, research_lab/runtime.py, research_lab/schemas.py, research_lab/serde.py, tests/test_artifacts.py, tests/test_boundaries.py, tests/test_finance.py, tests/test_pipeline.py, uv.lock
+
+Limitations and exclusions:
+- Ignored/generated data, private_eval, runs, exports, virtual environments, caches and .git internals are outside this tracked-source scope.
+- No live service, hosted model or isolated evaluator is implemented; host ACLs and future shared deployments remain unverified.
+- Evaluator readiness and recovery correctness issues are recorded for subsequent fixes, without a demonstrated cross-principal security impact.
+
+### Scan Summary
+
+| Field | Value |
+| --- | --- |
+| Scan outcome | completed |
+| Reportable findings | 0 |
+| Severity mix | none |
+| Confidence mix | none |
+| Coverage | complete |
+| Validation mode | static |
+
+Canonical artifacts: `scan-manifest.json`, `findings.json`, and `coverage.json`. This report is a deterministic projection of those files.
+
+## Threat Model
+
+At revision 32cf35e, SellsideDistillation is a local Python 3.12–3.14 research-fixture application. python -m research_lab enters the CLI; there is no installed executable, server, hosted model, or external runtime dependency. Imports preserve local reports and extract native text/CSV; generation constructs synthetic evidence, compiles a generic or synthetic candidate playbook, runs fixed financial operations, evaluates saved outputs, and renders local review pages. Real-report generation, PDF parsing, live models, and isolated locked evaluations remain pending (research_lab/__main__.py:1; research_lab/cli.py:18; research_lab/runtime.py:71; pyproject.toml:5; README.md:5; docs/implementation_status.md:38). Resource notation: P is the source checkout C:/Users/jense/Desktop/SellsideDistillation, established through Path(__file__).resolve().parents\[1\]; R is resolve(--root), defaulting to the process working directory. In the documented repository-root invocation, R=P. Moving R does not move trusted project inputs under P (research_lab/fixtures.py:11; research_lab/cli.py:20; research_lab/cli.py:51).
+
+### Assets
+
+- Imported source confidentiality, original bytes, and provenance: R/data/originals/\<SHA-256\>, document metadata and aliases in R/data/corpus.sqlite3, extraction snapshots in R/data/derived/doc_\<SHA-256\>.json, and discovery dissections in R/data/derived/doc_\<SHA-256\>.dissection.json. Incoming files are read without modification; managed originals use exclusive creation and hash verification on subsequent reads (research_lab/corpus.py:64; research_lab/corpus.py:98; research_lab/corpus.py:126; research_lab/corpus.py:148; research_lab/playbooks.py:49).
+- Experiment integrity: trusted P/configs/lab.toml or explicit configuration path, P/configs/experiments/fixture_smoke.json, P/fixtures/earnings.json, P/playbooks/generic/v1.json, P/fixtures/discovery/report.md, application source, and P/uv.lock. Generated scenario CSVs reside at R/data/fixture_inputs/\<case\>/\<scenario\>.csv (research_lab/runtime.py:23; research_lab/runtime.py:77; research_lab/runtime.py:132; research_lab/fixtures.py:26; research_lab/fixtures.py:51; research_lab/playbooks.py:53).
+- Evidence eligibility and experimental separation: source ID/hash allowlists, development role, document and fact availability, entity identity, filtered in-memory EvidenceView contents, and evaluator references. oracle_for validates or creates R/private_eval/\<task_id\>.json but returns the public oracle loaded from P/fixtures/evaluator/answers.json; these answers are not a confidential holdout (research_lab/evidence.py:22; research_lab/evidence.py:58; research_lab/evaluation.py:26; docs/research_register.md:24).
+- Saved analytical outputs, provenance, and execution records: R/runs/run_\<32 hex\>/ contains task, evidence, source register, playbook, claims, calculations, findings, report, trace, evaluation, manifest, review.html, and freeze.json. Comparisons reside at R/runs/experiments/experiment_\<32 hex\>/; regrading produces R/exports/run_\<32 hex\>.evaluation.json (research_lab/runtime.py:79; research_lab/runtime.py:85; research_lab/runtime.py:116; research_lab/runtime.py:130; research_lab/runtime.py:151; research_lab/cli.py:90).
+- Operator filesystem authority and local resource availability. Defaults allow 30 elapsed seconds, 40 tool calls, and zero model calls, tokens, repair rounds, or paid cost; counters govern cooperative generation calls rather than every filesystem or evaluation operation (configs/lab.toml:7; research_lab/budget.py:23; research_lab/runtime.py:74; research_lab/runtime.py:83; research_lab/runtime.py:121).
+
+### Trust Boundaries
+
+- Report supplier to local operator intake: the operator selects --input and corpus role. Intake accepts only .md, .txt, .csv, and .pdf; native parsing uses UTF-8 decoding and csv.DictReader, PDF bytes are preserved without parsing, and managed filenames derive from validated content hashes. SQL values use parameters. Source content is not executed (research_lab/cli.py:24; research_lab/cli.py:63; research_lab/corpus.py:25; research_lab/corpus.py:98; research_lab/corpus.py:136; research_lab/schemas.py:66).
+- Corpus/orchestrator to adapter: build_packet checks development role, allowlisted content hash, and document availability before loading source content; it then excludes financial rows with late/unknown availability or another entity. EvidenceView contains defensive copies and resolves reads/searches only against that packet. The adapter receives task, filtered view, action names, budget, findings, and event callback rather than the corpus or evaluator path (research_lab/evidence.py:22; research_lab/evidence.py:61; research_lab/runtime.py:103).
+- Discovery material and playbook configuration to executable behavior: arbitrary discovery documents produce transcriptions and review questions. Candidate inference requires matching the bundled synthetic report hash. Rules become named actions checked against the adapter's fixed action set; financial operations dispatch through a fixed registry (research_lab/playbooks.py:10; research_lab/playbooks.py:31; research_lab/adapter.py:33; research_lab/finance.py:77).
+- Generator outputs to evaluator: the single-run coordinator calls oracle_for after adapter generation and report assembly. evaluate_bundle independently reads saved task/evidence/claims/calculations/report and applies source, arithmetic, linkage, and bounded prose checks. The comparison coordinator separately reads the public oracle before its run loop to classify expected outcomes; it does not pass that oracle into the adapter (research_lab/runtime.py:107; research_lab/runtime.py:120; research_lab/runtime.py:159; research_lab/evaluation.py:43; research_lab/evaluation.py:179).
+- Saved run to replay/regrading: CLI run IDs must match run_\<32 lowercase hex\>. verify_run compares the file inventory, resolves each listed artifact under the run directory, and checks SHA-256 values. Regrading verifies first and writes a separate export. These checks trust the local freeze manifest and do not authenticate its author (research_lab/runtime.py:43; research_lab/runtime.py:51; research_lab/runtime.py:65; research_lab/cli.py:85).
+- Saved analytical text to browser rendering: application-generated HTML escapes textual and attribute content, restricts Markdown conversion to escaped blocks and numeric claim anchors, and uses local artifact links and fixed CSS/JavaScript. Rendering writes R/runs/run_\<id\>/review.html and R/runs/experiments/experiment_\<id\>/index.html; no publication service is implemented (research_lab/rendering.py:29; research_lab/rendering.py:50; research_lab/rendering.py:80; research_lab/rendering.py:127).
+- Operator commands to local storage are privileged application operations, not separate authenticated user roles. inspect can retrieve any inventoried document; dissect requires discovery role. The application uses inherited filesystem permissions and contains no tenant or OS-account separation between corpus, adapter code, evaluator, and renderer (research_lab/cli.py:69; research_lab/playbooks.py:10; research_lab/corpus.py:64; research_lab/serde.py:27; README.md:99).
+
+### Attacker Capabilities
+
+- A report supplier may control bytes and filenames of files the operator chooses to ingest, including malformed native text/CSV, misleading financial data, or instruction-like prose. That supplier does not thereby control trusted project files, the corpus database, --root, configuration, or evaluator state. Normal run/compare/demo commands generate their own bundled synthetic sources rather than selecting arbitrary previously ingested reports (research_lab/cli.py:63; research_lab/runtime.py:74; research_lab/fixtures.py:23).
+- A caller using the evidence interface may request arbitrary span identifiers, search strings, or scenarios. Successful boundary failure would add access to source material outside its packet; the current implementation resolves these requests only against copied packet contents (research_lab/evidence.py:61).
+- Someone able to modify the operator's source checkout, corpus database, run artifacts and their freeze manifest, or Python process already has material local authority. The repository does not establish isolation from that actor; host compromise, malicious replacement adapters, and a remote multi-user deployment must not be assumed from the current CLI architecture (README.md:99; README.md:101).
+
+### Security Objectives
+
+- Preserve imported original bytes and bind document identity, source reads, and evidence references to validated SHA-256 values; reject duplicate content crossing corpus splits (research_lab/corpus.py:103; research_lab/corpus.py:110; research_lab/corpus.py:126; research_lab/corpus.py:148; research_lab/schemas.py:66).
+- Prevent generator tool calls from returning evidence outside the declared development-source, hash, entity, and availability boundary; keep evaluator answers out of adapter arguments (research_lab/evidence.py:22; research_lab/runtime.py:107; research_lab/evaluation.py:26).
+- Keep source prose and configuration action names from becoming arbitrary executable expressions; apply explicit financial contracts and independent checks before presenting fixture results as mechanically supported (research_lab/adapter.py:33; research_lab/finance.py:33; research_lab/finance.py:77; research_lab/evaluation.py:89).
+- Keep the supported fixture route local, reserve configured resources before dispatched adapter tools/calculations, and record budget exhaustion with partial findings (research_lab/runtime.py:23; research_lab/evidence.py:66; research_lab/adapter.py:58; research_lab/budget.py:23; research_lab/runtime.py:110).
+- Make artifact changes detectable against a saved inventory, keep replay generation-free, and write regrading results separately from frozen runs (research_lab/runtime.py:51; research_lab/cli.py:85).
+- Keep supplied reports, evaluator copies, run bundles, exports, and environment files out of ordinary Git additions by default. These are ignore rules rather than filesystem access controls or protection against forced publication ( .gitignore:5; .gitignore:8; equity-research-agent-lab-handoff.md:1326).
+
+### Assumptions
+
+- Scope is the tracked repository at 32cf35e. Ignored/generated data, private_eval, runs, exports, virtual environments, caches, and .git contents were not inspected. This independent architecture mapping is not completed security-audit coverage; no application code, tests, scan tools, or network requests were executed.
+- User-context origin: the parent task requests development practices, frequent commits, a main/dev/feature branch structure, a repository audit, and remote pushes. Those are operator development workflows, not application endpoints. No CI/release/deployment workflow exists in the tracked inventory at this revision; external GitHub permissions and branch protections are unresolved by this offline mapping.
+- --root changes generated storage; default configuration and bundled fixtures/playbooks/oracle remain rooted at P. Explicit relative --config and --input paths resolve from the working directory, independently of --root. This is consistent with README's storage-root description, but callers must not infer that --root redirects every input read (README.md:66; research_lab/cli.py:20; research_lab/cli.py:65; research_lab/runtime.py:24; research_lab/fixtures.py:11).
+- Corpus roles are experimental eligibility metadata, not OS permissions. README explicitly describes an application/tool boundary for the deterministic adapter and denies an OS sandbox or locked live evaluation. The public oracle and local private_eval copy agree with that limitation (README.md:99; research_lab/evidence.py:59; research_lab/evaluation.py:29; docs/decision_log.md:12).
+- Established manifest discrepancy: RunRecord.permitted_tools lists get_financial_facts, read_source_span, and run_calculation, while the supplied EvidenceView also exposes search_evidence. The manifest is written after generation and is not an authorization gate. Search remains confined to allowed packet spans, and the bundled adapter does not call it; additional evidence access is not established (research_lab/schemas.py:302; research_lab/evidence.py:76; research_lab/runtime.py:130).
+- The configured elapsed ceiling is cooperative generation control. Input reads, fixture preparation, post-generation evaluation, rendering, and filesystem writes have no encompassing hard timeout, input-size limit, or disk quota. The decision log calls the elapsed checks cooperative; no shared service or hostile remote workload is established (docs/decision_log.md:17; research_lab/corpus.py:103; research_lab/runtime.py:74; research_lab/runtime.py:83; research_lab/runtime.py:121).
+- Frozen records are unsigned and files retain inherited host permissions. A writer that changes both artifacts and freeze.json can replace the trusted inventory. README explicitly says signed immutability is absent, so this is a deployment limitation rather than an established contradiction (research_lab/runtime.py:43; research_lab/runtime.py:51; research_lab/serde.py:27; README.md:101).
+- Publication/availability evidence is supplied by the operator or synthetic fixture and is not independently authenticated. Exact duplicates are enforced, while report-series and near-duplicate grouping remain manual (research_lab/cli.py:27; research_lab/corpus.py:110; README.md:78).
+- The handoff's installed lab executable, live routes, export command, process isolation, and richer architecture are proposals, not current implemented guarantees. The handoff labels its layout illustrative and current documentation marks these capabilities pending (equity-research-agent-lab-handoff.md:1271; equity-research-agent-lab-handoff.md:1328; docs/implementation_status.md:38).
+- Repository-relative citations were batch-checked against the fixed-revision tracked inventory and source line bounds.
+
+## Findings
+
+### No findings
+
+No reportable findings survived the canonical discovery, validation, and reportability gates.
+
+## Reviewed Surfaces
+
+| Surface | Risk Area | Outcome | Notes |
+| --- | --- | --- | --- |
+| Independent full repository baseline | not recorded | No issue found | Independent baseline fully audited 35 tracked files (all code, tests, configuration, fixture and supporting files other than the original handoff). No network, arbitrary code evaluation, unsafe deserialization, or external credential route exists. Source admission, hashed paths, parameterized SQL, frozen replay and escaped HTML were traced: research_lab/corpus.py:103-158; evidence.py:22-80; rendering.py:29-156; runtime.py:43-68. Parent reviewed the handoff. |
+| Third-party source to evidence, filesystem and browser boundaries | not recorded | No issue found | Focused worker fully reviewed README, all 15 implementation modules and three boundary/artifact/pipeline tests. Document authors cannot set operator roles or task allowlists. Corpus IDs are content-derived and SQL is parameterized (corpus.py:103-138); fact provenance is generated (corpus.py:42-60); evidence gates precede payload reads (evidence.py:24-54); HTML attributes and text are escaped (rendering.py:50-154); action dispatch is fixed (adapter.py:33-59, finance.py:77-83). No supported document-author capability gain found. |
+| Architecture and effective resources | not recorded | No issue found | Independent architecture worker supplied preserved six-field threat model and consumer/resource mapping. PROJECT inputs remain in source checkout while resolved --root directs output storage (fixtures.py:11, cli.py:20-65, runtime.py:23-29). Generator receives filtered copies and no evaluator argument; no OS isolation is claimed (runtime.py:103-121, README.md:99). Architecture mapping is not itself audited file coverage. |
+| Evaluator readiness and resource/replay limitations | not recorded | Not applicable | Non-security correctness work identified for implementation: unknown claim IDs can count toward readiness without 15 numeric outputs (evaluation.py:145-146,203-223); empty lineage lists pass all() existence checks; run tool inventory omits packet-only search (schemas.py:302, evidence.py:76). Whole-file intake, cooperative budgets, and unsigned local manifests are documented local limitations. No additional attacker authority or shared-service exposure established. |
+| Independent baseline: local CLI, storage, and evidence tools | not recorded | No issue found | The baseline fully audited all 15 implementation modules, four test files, and 16 supporting tracked files. SQL binds values; source hashes and role/time filters gate reads; the deterministic adapter receives only copied evidence; HTML source content is escaped. No cross-principal exploit is supported. Evidence: research_lab/corpus.py:103-150, evidence.py:22-80, rendering.py:29-156, runtime.py:23-29,51-68,103-123. Handoff document remains for parent coverage. |
+| Evaluator readiness and claim lineage correctness | not recorded | Not applicable | Baseline identified a non-security correctness gap: evaluation.py:145-146 skips unknown claims and :203-223 counts questions by ID without requiring numeric coverage; the current adapter uses distinct gap_\* IDs. Parent independently observed empty lineage arrays also pass existence-only checks at :136-144. These will be repaired under the user's broader correctness audit after the fixed-revision security scan. No live or hostile model boundary exists. |
