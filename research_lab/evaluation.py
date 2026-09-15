@@ -6,12 +6,13 @@ This is deliberately not a general natural-language entailment grader.
 import json
 import re
 from collections import Counter
+from dataclasses import asdict
 from fractions import Fraction
 from pathlib import Path
 
 from .fixtures import PROJECT
-from .schemas import Calculation, Claim, Fact, Task, timestamp
-from .serde import from_dict, read_json, write_json
+from .schemas import Calculation, Claim, Document, EvidenceSpan, Fact, Task, timestamp
+from .serde import digest, from_dict, object_hash, read_json, write_json
 
 
 def half_up(value: Fraction) -> str:
@@ -36,7 +37,7 @@ def oracle_for(root: Path, task_id: str) -> dict:
     return fixture_oracle
 
 
-def read_records(path: Path, cls):
+def read_records[T](path: Path, cls: type[T]) -> list[T]:
     return [
         from_dict(cls, json.loads(line))
         for line in path.read_text(encoding="utf-8").splitlines()
@@ -48,7 +49,8 @@ def evaluate_bundle(run_dir: Path, oracle: dict) -> dict:
     task = from_dict(Task, read_json(run_dir / "task.json"))
     packet = read_json(run_dir / "evidence.json")
     facts = {f.fact_id: f for f in (from_dict(Fact, x) for x in packet["facts"])}
-    spans = {s["span_id"]: s for s in packet["spans"]}
+    documents = {d.document_id: d for d in (from_dict(Document, x) for x in packet["documents"])}
+    spans = {s.span_id: asdict(s) for s in (from_dict(EvidenceSpan, x) for x in packet["spans"])}
     claims = read_records(run_dir / "claims.jsonl", Claim)
     calculations = read_records(run_dir / "calculations.jsonl", Calculation)
     findings = read_json(run_dir / "findings.json")
@@ -65,6 +67,14 @@ def evaluate_bundle(run_dir: Path, oracle: dict) -> dict:
             }
         )
 
+    for name, inventory in (("documents", documents), ("spans", spans), ("facts", facts)):
+        if len(inventory) != len(packet[name]):
+            issue("evidence_inventory_mismatch", f"{name} IDs must be unique.")
+    if findings["claims"] != [asdict(c) for c in claims] or findings["calculations"] != [
+        asdict(c) for c in calculations
+    ]:
+        issue("artifact_inventory_mismatch", "Findings and analytical ledgers disagree.")
+
     if len({c.claim_id for c in claims}) != len(claims):
         issue("claim_inventory_mismatch", "Claim IDs must be unique.")
     if len({c.calculation_id for c in calculations}) != len(calculations) or len(
@@ -72,16 +82,24 @@ def evaluate_bundle(run_dir: Path, oracle: dict) -> dict:
     ) != len(calculations):
         issue("invalid_calculation", "Calculation IDs and scenario outputs must be unique.")
 
-    allowed_documents = {s.document_id for s in task.allowed_sources}
+    allowed_documents = {s.document_id: s.content_sha256 for s in task.allowed_sources}
     cutoff = timestamp(task.as_of)
-    for document in packet["documents"]:
+    for document in documents.values():
         if (
-            document["document_id"] not in allowed_documents
-            or document["role"] != "development"
-            or document["available_at"] is None
-            or timestamp(document["available_at"]) > cutoff
+            allowed_documents.get(document.document_id) != document.content_sha256
+            or document.role != "development"
+            or document.available_at is None
+            or timestamp(document.available_at) > cutoff
         ):
             issue("source_boundary", "Saved evidence violates the task source boundary.")
+    for span in spans.values():
+        parent = documents.get(span["document_id"])
+        if parent is None or parent.content_sha256 != span["document_sha256"]:
+            issue(
+                "source_link_missing",
+                "Source span has no matching saved document.",
+                span["span_id"],
+            )
     for fact in facts.values():
         if (
             fact.available_at is None
@@ -93,14 +111,28 @@ def evaluate_bundle(run_dir: Path, oracle: dict) -> dict:
             )
         for identifier in fact.source_span_ids:
             span = spans.get(identifier)
-            if span is None or span["document_id"] not in allowed_documents:
+            if (
+                span is None
+                or span["document_id"] not in documents
+                or span["document_id"] not in allowed_documents
+            ):
                 issue(
                     "source_link_missing",
                     "Financial input has no allowed source span.",
                     fact.fact_id,
                 )
                 continue
-            row = json.loads(span["text"])
+            try:
+                row = json.loads(span["text"])
+                if not isinstance(row, dict) or span["location_kind"] != "csv_record":
+                    raise ValueError("Expected a financial CSV record")
+            except ValueError:
+                issue(
+                    "source_transcription_mismatch",
+                    "Financial input has no readable CSV source row.",
+                    fact.fact_id,
+                )
+                continue
             fields = (
                 "entity_id",
                 "metric",
@@ -125,6 +157,7 @@ def evaluate_bundle(run_dir: Path, oracle: dict) -> dict:
 
     numeric_checks = []
     rational_outputs = {}
+    valid_calculations = {}
     required_metrics = {
         "revenue",
         "operating_margin",
@@ -147,6 +180,8 @@ def evaluate_bundle(run_dir: Path, oracle: dict) -> dict:
                 calc.operation != "operating_model"
                 or calc.formula_version != "1"
                 or set(calc.input_fact_ids) != required_metrics
+                or calc.scenario not in ("prior", "base", "downside")
+                or calc.status != "completed"
             ):
                 raise ValueError("Unknown calculation contract")
             inputs = {k: facts[v] for k, v in calc.input_fact_ids.items()}
@@ -169,11 +204,17 @@ def evaluate_bundle(run_dir: Path, oracle: dict) -> dict:
                     or fact.scenario != calc.scenario
                     or (fact.unit, fact.scale) != expected_units[metric]
                     or fact.value_type not in ("forecast", "assumption")
+                    or sum(
+                        f.metric == metric and f.scenario == calc.scenario for f in facts.values()
+                    )
+                    != 1
                 ):
                     raise ValueError("Incompatible input unit, metric, vintage, or classification")
             x = {k: Fraction(f.value) for k, f in inputs.items()}
             if (
                 x["diluted_shares"] <= 0
+                or x["revenue"] < 0
+                or x["assumed_forward_pe"] < 0
                 or not 0 <= x["tax_rate"] <= 1
                 or not 0 <= x["operating_margin"] <= 1
             ):
@@ -202,7 +243,7 @@ def evaluate_bundle(run_dir: Path, oracle: dict) -> dict:
             }
             if calc.output_units != expected_output_units:
                 raise ValueError("Unexpected output units")
-            rational_outputs[calc.scenario] = expected
+            passed_all = True
             for metric, reference in expected.items():
                 actual = Fraction(calc.outputs[metric])
                 golden = Fraction(oracle["expected"][calc.scenario][metric])
@@ -211,6 +252,7 @@ def evaluate_bundle(run_dir: Path, oracle: dict) -> dict:
                     {"calculation_id": calc.calculation_id, "metric": metric, "passed": passed}
                 )
                 if not passed:
+                    passed_all = False
                     issue(
                         "wrong_number",
                         f"{calc.scenario} {metric} fails independent recomputation/reference check.",
@@ -225,40 +267,95 @@ def evaluate_bundle(run_dir: Path, oracle: dict) -> dict:
                     "Half-up display disagrees with the hidden fixture reference.",
                     calc.calculation_id,
                 )
+                passed_all = False
+            if passed_all:
+                rational_outputs[calc.scenario] = expected
+                valid_calculations[calc.scenario] = calc
         except (KeyError, ValueError, ZeroDivisionError) as exc:
             issue("invalid_calculation", str(exc), calc.calculation_id)
 
-    calculation_ids = {c.calculation_id for c in calculations}
     resolved_links = 0
+    supported_claims: set[str] = set()
     labels = {
         "prior": "Prior forecast",
         "base": "Revised base case",
         "downside": "Margin-downside case",
     }
+    number = r"(-?[0-9]{1,40}(?:\.[0-9]{1,40})?)"
     grammar = re.compile(
-        r"(Prior forecast|Revised base case|Margin-downside case): operating profit is USD ([-\d.]+) million, EPS is USD ([-\d.]+), and illustrative value is USD ([-\d.]+) per share\."
+        r"(Prior forecast|Revised base case|Margin-downside case): operating profit is USD "
+        + number
+        + r" million, EPS is USD "
+        + number
+        + r", and illustrative value is USD "
+        + number
+        + r" per share\."
     )
+    claim_scenarios = {
+        "forecast_prior": ("prior",),
+        "forecast_base": ("base",),
+        "forecast_downside": ("downside",),
+        "revision_bridge": ("prior", "base"),
+        "margin_sensitivity": ("base", "downside"),
+    }
+    multiples = [f for f in facts.values() if f.metric == "assumed_forward_pe"]
     for claim in claims:
+        if claim.claim_type == "unknown":
+            issue(
+                "unresolved_claim",
+                "An explicitly unresolved claim cannot satisfy readiness.",
+                claim.claim_id,
+            )
+            continue
+        scenarios = claim_scenarios.get(claim.claim_id, ())
+        expected_calcs = [valid_calculations[s] for s in scenarios if s in valid_calculations]
+        expected_facts = {
+            identifier for calc in expected_calcs for identifier in calc.input_fact_ids.values()
+        }
+        if claim.claim_id == "multiple_assumption":
+            expected_facts = {f.fact_id for f in multiples}
+        expected_spans = {
+            span for identifier in expected_facts for span in facts[identifier].source_span_ids
+        }
         linked = (
-            all(s in spans for s in claim.supporting_span_ids)
-            and all(c in calculation_ids for c in claim.calculation_ids)
-            and all(f in facts for f in claim.fact_ids)
+            bool(expected_facts)
+            and len(expected_calcs) == len(scenarios)
+            and set(claim.fact_ids) == expected_facts
+            and set(claim.supporting_span_ids) == expected_spans
+            and set(claim.calculation_ids) == {c.calculation_id for c in expected_calcs}
+            and all(s in spans for s in expected_spans)
+            and all(
+                len(values) == len(set(values))
+                for values in (claim.fact_ids, claim.supporting_span_ids, claim.calculation_ids)
+            )
         )
         if not linked:
             issue(
                 "claim_lineage_missing",
-                "Claim has a missing evidence or calculation link.",
+                "Claim requires the complete matching fact, span and calculation lineage.",
                 claim.claim_id,
             )
-        if linked and (claim.supporting_span_ids or claim.calculation_ids):
+        else:
             resolved_links += 1
-        if claim.claim_type == "unknown":
-            continue
+        expected_type = "assumption" if claim.claim_id == "multiple_assumption" else "forecast"
+        expected_section = (
+            "Assumptions and gaps"
+            if expected_type == "assumption"
+            else "Margin sensitivity"
+            if claim.claim_id in ("forecast_downside", "margin_sensitivity")
+            else "Estimate bridge"
+        )
+        context_valid = (
+            claim.claim_type == expected_type
+            and claim.entity_id == task.entity_id
+            and claim.horizon == "FY2026"
+            and claim.report_section == expected_section
+        )
         supported = False
         match = grammar.fullmatch(claim.text)
         if match:
             scenario = next(k for k, v in labels.items() if v == match[1])
-            if scenario in rational_outputs:
+            if scenario in rational_outputs and claim.claim_id == "forecast_" + scenario:
                 expected = rational_outputs[scenario]
                 supported = (
                     Fraction(match[2]) == expected["operating_profit"]
@@ -274,8 +371,14 @@ def evaluate_bundle(run_dir: Path, oracle: dict) -> dict:
                 "At fixed non-revenue assumptions, the revised base case changes illustrative value by USD "
                 f"{half_up(delta)} per share versus the prior forecast."
             )
-            prior = {f.metric: f.value for f in facts.values() if f.scenario == "prior"}
-            base = {f.metric: f.value for f in facts.values() if f.scenario == "base"}
+            prior = {
+                k: Fraction(facts[v].value)
+                for k, v in valid_calculations["prior"].input_fact_ids.items()
+            }
+            base = {
+                k: Fraction(facts[v].value)
+                for k, v in valid_calculations["base"].input_fact_ids.items()
+            }
             supported = supported and all(
                 prior[k] == base[k] for k in required_metrics - {"revenue"}
             )
@@ -283,9 +386,15 @@ def evaluate_bundle(run_dir: Path, oracle: dict) -> dict:
             claim.claim_id == "margin_sensitivity"
             and {"base", "downside"} <= rational_outputs.keys()
         ):
-            base = {f.metric: f.value for f in facts.values() if f.scenario == "base"}
-            down = {f.metric: f.value for f in facts.values() if f.scenario == "downside"}
-            margin_delta = Fraction(down["operating_margin"]) - Fraction(base["operating_margin"])
+            base = {
+                k: Fraction(facts[v].value)
+                for k, v in valid_calculations["base"].input_fact_ids.items()
+            }
+            down = {
+                k: Fraction(facts[v].value)
+                for k, v in valid_calculations["downside"].input_fact_ids.items()
+            }
+            margin_delta = down["operating_margin"] - base["operating_margin"]
             price_delta = (
                 rational_outputs["downside"]["value_per_share"]
                 - rational_outputs["base"]["value_per_share"]
@@ -296,25 +405,27 @@ def evaluate_bundle(run_dir: Path, oracle: dict) -> dict:
                 f"({int(bp)} basis points) and illustrative value by USD {half_up(price_delta)} per share, "
                 "holding the other supplied inputs fixed."
             )
-            supported = supported and all(
-                base[k] == down[k] for k in required_metrics - {"operating_margin"}
-            )
-        elif claim.claim_id == "multiple_assumption":
-            multiples = [f for f in facts.values() if f.metric == "assumed_forward_pe"]
-            supported = bool(multiples) and all(
-                f.value_type == "assumption" and f.value == multiples[0].value for f in multiples
-            )
             supported = (
                 supported
-                and claim.text
-                == f"The forward P/E of {multiples[0].value}x is a supplied assumption. Its market justification is unassessed."
+                and bp.denominator == 1
+                and all(base[k] == down[k] for k in required_metrics - {"operating_margin"})
             )
-        if not supported:
+        elif claim.claim_id == "multiple_assumption" and multiples:
+            supported = all(
+                f.value_type == "assumption" and Fraction(f.value) == Fraction(multiples[0].value)
+                for f in multiples
+            )
+            supported = supported and claim.text == (
+                f"The forward P/E of {multiples[0].value}x is a supplied assumption. Its market justification is unassessed."
+            )
+        if not supported or not context_valid:
             issue(
                 "claim_semantics_unassessed",
-                "This claim is outside the checked synthetic prose contract or disagrees with the evidence.",
+                "Claim text, classification or context disagrees with the checked synthetic contract.",
                 claim.claim_id,
             )
+        elif linked:
+            supported_claims.add(claim.claim_id)
 
     # Scan the final artifact independently of the generator's registered claim inventory.
     report = (run_dir / "report.md").read_text(encoding="utf-8")
@@ -327,7 +438,7 @@ def evaluate_bundle(run_dir: Path, oracle: dict) -> dict:
         "All inputs are invented. This is a test of research plumbing, not a company forecast.",
         "No supported findings are available for this section.",
     }
-    seen = Counter()
+    seen: Counter[int] = Counter()
     for block in report.strip().split("\n\n"):
         if block in headings or block in fixed_text:
             continue
@@ -359,7 +470,7 @@ def evaluate_bundle(run_dir: Path, oracle: dict) -> dict:
         ("margin_sensitivity", "sensitivity"),
         ("multiple_assumption", "assumption"),
     ):
-        if any(c.claim_id == identifier for c in claims) and not any(
+        if identifier in supported_claims and not any(
             i.get("artifact_id") == identifier for i in issues
         ):
             answered.append(question)
@@ -367,6 +478,11 @@ def evaluate_bundle(run_dir: Path, oracle: dict) -> dict:
         issue(
             "missing_required_question",
             "One or more required analytical questions cannot be answered with usable evidence.",
+        )
+    if set(valid_calculations) != {"prior", "base", "downside"} or len(numeric_checks) != 15:
+        issue(
+            "missing_required_calculation",
+            "All three scenarios and 15 independently checked outputs are required.",
         )
     critical = [i for i in issues if i["severity"] == "critical"]
     failures = {
@@ -380,6 +496,9 @@ def evaluate_bundle(run_dir: Path, oracle: dict) -> dict:
         "invalid_calculation",
         "rounding_error",
         "claim_lineage_missing",
+        "source_link_missing",
+        "evidence_inventory_mismatch",
+        "artifact_inventory_mismatch",
     }
     status = (
         "failed"
@@ -390,7 +509,9 @@ def evaluate_bundle(run_dir: Path, oracle: dict) -> dict:
     )
     return {
         "schema_version": "1.0",
-        "grader": "fixture_fraction_and_prose_v1",
+        "grader": "fixture_fraction_and_prose_v2",
+        "grader_code_hash": digest(Path(__file__).read_bytes()),
+        "oracle_hash": object_hash(oracle),
         "status": status,
         "issues": issues,
         "checks": numeric_checks,
