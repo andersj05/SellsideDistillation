@@ -178,7 +178,7 @@ def execute_fixture(
     findings = Findings()
     events: list[dict[str, Any]] = []
 
-    def event(name, details):
+    def event(name: str, details: dict) -> None:
         events.append(
             {
                 "schema_version": "1.0",

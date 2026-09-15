@@ -1,6 +1,7 @@
 """A reviewable synthetic dissection and versioned rule selection."""
 
 from dataclasses import asdict
+from typing import Any
 
 from .corpus import Corpus
 from .fixtures import PROJECT
@@ -15,7 +16,7 @@ def dissect(corpus: Corpus, document_id: str) -> dict:
     spans = corpus.spans(document_id)
     fixture_hash = digest((PROJECT / "fixtures" / "discovery" / "report.md").read_bytes())
     synthetic = document.content_sha256 == fixture_hash
-    bundle = {
+    bundle: dict[str, Any] = {
         "schema_version": "1.0",
         "document_id": document_id,
         "synthetic": synthetic,

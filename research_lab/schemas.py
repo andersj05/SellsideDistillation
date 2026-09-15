@@ -50,7 +50,7 @@ def sha256(value: str) -> None:
 class Record:
     schema_version: str = "1.0"
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         validate_record(self)
         if self.schema_version != "1.0":
             raise ValueError(
@@ -77,7 +77,7 @@ class Document(Record):
     extraction_status: Literal["extracted", "pending_parser"] = "extracted"
     review_status: str = "pending"
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         super().__post_init__()
         sha256(self.content_sha256)
         if self.document_id != "doc_" + self.content_sha256:
@@ -112,7 +112,7 @@ class EvidenceSpan(Record):
     extraction_method: str = "native_text_v1"
     verification_status: Verification = "unverified"
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         super().__post_init__()
         sha256(self.document_sha256)
         if self.document_id != "doc_" + self.document_sha256:
@@ -156,7 +156,7 @@ class Fact(Record):
     supersedes_fact_id: str | None = None
     transformation: str = "Curated decimal transcription; no implicit scale conversion"
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         super().__post_init__()
         decimal(self.value)
         if date.fromisoformat(self.period_end) < date.fromisoformat(self.period_start):
@@ -200,7 +200,7 @@ class Calculation(Record):
     status: str = "completed"
     warnings: list[str] = field(default_factory=list)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         super().__post_init__()
         for value in self.outputs.values():
             decimal(value)
@@ -230,7 +230,7 @@ class Rule(Record):
     counterexamples: list[str] = field(default_factory=list)
     experiment_history: list[str] = field(default_factory=list)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         super().__post_init__()
         if self.version < 1 or not self.actions or not self.checks:
             raise ValueError("Rules require a version, executable actions, and observable checks")
@@ -243,7 +243,7 @@ class SourceRef(Record):
     document_id: str
     content_sha256: str
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         super().__post_init__()
         sha256(self.content_sha256)
         if self.document_id != "doc_" + self.content_sha256:
@@ -264,7 +264,7 @@ class Task(Record):
     )
     output_word_budget: int = 1500
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         super().__post_init__()
         timestamp(self.as_of)
         if len({s.document_id for s in self.allowed_sources}) != len(self.allowed_sources):
@@ -282,7 +282,7 @@ class BudgetLimits(Record):
     max_repair_rounds: int = 0
     max_cost_usd: str = "0"
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         super().__post_init__()
         for value in (
             self.max_elapsed_seconds,

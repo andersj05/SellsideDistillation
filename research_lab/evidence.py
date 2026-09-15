@@ -3,6 +3,7 @@
 from copy import deepcopy
 from dataclasses import dataclass, field
 
+from .budget import BudgetMeter
 from .corpus import Corpus, facts_from_spans
 from .schemas import Document, EvidenceSpan, Fact, Issue, Task, timestamp
 
@@ -20,7 +21,10 @@ class EvidencePacket:
 
 
 def build_packet(corpus: Corpus, task: Task) -> EvidencePacket:
-    documents, spans, facts, issues = [], [], [], []
+    documents: list[Document] = []
+    spans: list[EvidenceSpan] = []
+    facts: list[Fact] = []
+    issues: list[Issue] = []
     cutoff = timestamp(task.as_of)
     for reference in task.allowed_sources:
         document = corpus.document(reference.document_id)
@@ -76,7 +80,7 @@ def build_packet(corpus: Corpus, task: Task) -> EvidencePacket:
 class EvidenceView:
     """Tool boundary, not an OS sandbox. Never supply a host-filesystem tool to an adapter."""
 
-    def __init__(self, packet: EvidencePacket, meter):
+    def __init__(self, packet: EvidencePacket, meter: BudgetMeter):
         self._facts = {f.fact_id: deepcopy(f) for f in packet.facts}
         self._spans = {s.span_id: deepcopy(s) for s in packet.spans}
         self._meter = meter

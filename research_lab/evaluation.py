@@ -56,7 +56,9 @@ def evaluate_bundle(run_dir: Path, oracle: dict) -> dict:
     findings = read_json(run_dir / "findings.json")
     issues = list(findings["issues"]) + list(packet["issues"])
 
-    def issue(code, message, artifact=None, severity="critical"):
+    def issue(
+        code: str, message: str, artifact: str | None = None, severity: str = "critical"
+    ) -> None:
         issues.append(
             {
                 "code": code,
@@ -92,13 +94,13 @@ def evaluate_bundle(run_dir: Path, oracle: dict) -> dict:
             or timestamp(document.available_at) > cutoff
         ):
             issue("source_boundary", "Saved evidence violates the task source boundary.")
-    for span in spans.values():
-        parent = documents.get(span["document_id"])
-        if parent is None or parent.content_sha256 != span["document_sha256"]:
+    for saved_span in spans.values():
+        parent = documents.get(saved_span["document_id"])
+        if parent is None or parent.content_sha256 != saved_span["document_sha256"]:
             issue(
                 "source_link_missing",
                 "Source span has no matching saved document.",
-                span["span_id"],
+                saved_span["span_id"],
             )
     for fact in facts.values():
         if (

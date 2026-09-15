@@ -1,6 +1,6 @@
 import json
 import unittest
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -107,6 +107,27 @@ class BoundaryTests(unittest.TestCase):
         returned = view.get_financial_facts("base")
         returned[0].source_span_ids.append("hidden")
         self.assertNotIn("hidden", view.get_financial_facts("base")[0].source_span_ids)
+
+    def test_individual_ineligible_rows_are_withheld_from_fact_and_span_tools(self):
+        task = prepare_case(self.corpus, "clean")
+        task = replace(task, allowed_sources=[task.allowed_sources[0]])
+        spans = self.corpus.spans(task.allowed_sources[0].document_id)
+        for change in (
+            {"available_at": ""},
+            {"available_at": "2099-01-01T00:00:00Z"},
+            {"entity_id": "different-company"},
+        ):
+            with self.subTest(change=change):
+                row = json.loads(spans[0].text)
+                row.update(change)
+                modified = [replace(spans[0], text=json.dumps(row)), *spans[1:]]
+                with patch.object(self.corpus, "spans", return_value=modified):
+                    packet = build_packet(self.corpus, task)
+                self.assertNotIn(spans[0].span_id, {s.span_id for s in packet.spans})
+                self.assertTrue(
+                    all(spans[0].span_id not in f.source_span_ids for f in packet.facts)
+                )
+                self.assertTrue(packet.issues)
 
     def test_schema_round_trip_and_unknown_version_fail_closed(self):
         task = prepare_case(self.corpus, "clean")

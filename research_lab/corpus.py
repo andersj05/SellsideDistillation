@@ -4,6 +4,7 @@ import csv
 import io
 import json
 import sqlite3
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import asdict
 from datetime import UTC, datetime
@@ -129,7 +130,7 @@ class Corpus:
                 raise ValueError("Unsupported corpus schema; explicit migration required")
 
     @contextmanager
-    def connect(self):
+    def connect(self) -> Iterator[sqlite3.Connection]:
         # sqlite3's context manager commits/rolls back but does not close the handle.
         # Explicit closure matters on Windows and for long-running intake sessions.
         connection = sqlite3.connect(self.db_path)

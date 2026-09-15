@@ -1,14 +1,14 @@
 """Deterministic fixture adapter. It receives capabilities, not a repository path."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Protocol
+from typing import Literal, Protocol
 
 from .budget import BudgetMeter
 from .evidence import EvidenceView
 from .finance import FinancialError, comparable, difference, display, margin_change, run_calculation
-from .schemas import Calculation, Claim, Issue, Task
+from .schemas import Calculation, Claim, Fact, Issue, Task, Verification
 
 
 @dataclass
@@ -38,7 +38,15 @@ class FixtureAdapter:
     provider = "offline"
     model_id = "deterministic-fixture-v1"
 
-    def generate(self, task, evidence, actions, meter, findings, event):
+    def generate(
+        self,
+        task: Task,
+        evidence: EvidenceView,
+        actions: set[str],
+        meter: BudgetMeter,
+        findings: Findings,
+        event: Callable[[str, dict], None],
+    ) -> None:
         known_actions = {
             "calculate_forecasts",
             "explain_changes",
@@ -49,19 +57,20 @@ class FixtureAdapter:
             raise ValueError("Playbook contains an unimplemented action")
         if not {"calculate_forecasts", "explain_changes", "preserve_gaps"}.issubset(actions):
             raise ValueError("The fixture adapter requires the generic workflow actions")
-        scenario_facts, calculations = {}, {}
+        scenario_facts: dict[str, list[Fact]] = {}
+        calculations: dict[str, Calculation] = {}
 
         def claim(
-            identifier,
-            text,
-            section,
+            identifier: str,
+            text: str,
+            section: str,
             *,
-            facts=(),
-            calcs=(),
-            kind="forecast",
-            verification="verified",
-            gaps=(),
-        ):
+            facts: Sequence[Fact] = (),
+            calcs: Sequence[Calculation] = (),
+            kind: Literal["forecast", "assumption", "unknown"] = "forecast",
+            verification: Verification = "verified",
+            gaps: Sequence[str] = (),
+        ) -> None:
             findings.claims.append(
                 Claim(
                     claim_id=identifier,
@@ -129,7 +138,9 @@ class FixtureAdapter:
                 {"calculation_id": calc.calculation_id, "input_fact_ids": calc.input_fact_ids},
             )
 
-        def pair(left, right, changed_metric):
+        def pair(
+            left: str, right: str, changed_metric: str
+        ) -> tuple[dict[str, Fact], dict[str, Fact]] | None:
             if left not in calculations or right not in calculations:
                 return None
             comparable(scenario_facts[left] + scenario_facts[right])

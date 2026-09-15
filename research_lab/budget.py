@@ -1,6 +1,7 @@
 """Reserve resource usage before dispatch, including calls that later fail."""
 
-from decimal import Decimal
+from collections.abc import Callable
+from decimal import Context, Decimal, localcontext
 from threading import Lock
 from time import monotonic
 
@@ -12,7 +13,7 @@ class BudgetExceeded(RuntimeError):
 
 
 class BudgetMeter:
-    def __init__(self, limits: BudgetLimits, clock=monotonic):
+    def __init__(self, limits: BudgetLimits, clock: Callable[[], float] = monotonic):
         self.limits = limits
         self.clock = clock
         self.start = clock()
@@ -20,7 +21,15 @@ class BudgetMeter:
         self.counts = dict(model_calls=0, tool_calls=0, tokens=0, repair_rounds=0)
         self.cost = Decimal("0")
 
-    def reserve(self, *, model_calls=0, tool_calls=0, tokens=0, repair_rounds=0, cost_usd="0"):
+    def reserve(
+        self,
+        *,
+        model_calls: int = 0,
+        tool_calls: int = 0,
+        tokens: int = 0,
+        repair_rounds: int = 0,
+        cost_usd: str = "0",
+    ) -> None:
         increments = dict(
             model_calls=model_calls,
             tool_calls=tool_calls,
@@ -30,7 +39,7 @@ class BudgetMeter:
         cost = decimal(cost_usd)
         if any(type(v) is not int or v < 0 for v in increments.values()) or cost < 0:
             raise ValueError("Resource reservations cannot be negative")
-        with self.lock:
+        with self.lock, localcontext(Context(prec=96)):
             if self.clock() - self.start >= self.limits.max_elapsed_seconds:
                 raise BudgetExceeded("Elapsed-time budget reached")
             for name, value in increments.items():
@@ -43,9 +52,10 @@ class BudgetMeter:
             self.cost += cost
 
     def usage(self) -> dict[str, str]:
-        return {
-            **{k: str(v) for k, v in self.counts.items()},
-            "cost_usd": str(self.cost),
-            "elapsed_seconds": f"{self.clock() - self.start:.6f}",
-            "cost_scope": "Model/tool charges only; local compute and human review unpriced",
-        }
+        with self.lock:
+            return {
+                **{k: str(v) for k, v in self.counts.items()},
+                "cost_usd": str(self.cost),
+                "elapsed_seconds": f"{self.clock() - self.start:.6f}",
+                "cost_scope": "Model/tool charges only; local compute and human review unpriced",
+            }
