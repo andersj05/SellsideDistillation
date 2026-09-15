@@ -1,0 +1,10 @@
+[project]
+name = "sellside-distillation"
+version = "0.1.0"
+description = "An offline, evidence-linked equity research experiment lab"
+requires-python = ">=3.12,<3.15"
+dependencies = []
+
+[tool.uv]
+package = false
+

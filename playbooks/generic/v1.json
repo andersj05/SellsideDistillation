@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0",
+  "playbook_id": "generic_v1",
+  "rules": [
+    {
+      "schema_version": "1.0",
+      "rule_id": "comparable_forecast_bridge",
+      "version": 1,
+      "name": "Reconcile comparable forecasts and scenarios",
+      "purpose": "Make financial changes reproducible and preserve missing inputs.",
+      "origin": "proposed",
+      "status": "experimental",
+      "applies_when": "An earnings update has a supplied forecast packet.",
+      "does_not_apply_when": "Historical actuals, guidance, and consensus would have to be substituted for forecasts.",
+      "required_inputs": ["revenue", "operating_margin", "net_interest_expense", "tax_rate", "diluted_shares", "assumed_forward_pe"],
+      "actions": ["calculate_forecasts", "explain_changes", "preserve_gaps"],
+      "outputs": ["estimate_bridge", "margin_sensitivity", "unresolved_questions"],
+      "checks": ["comparable_definitions", "arithmetic_recomputes", "no_revision_without_prior"],
+      "on_missing": "Mark the missing comparison incomplete; do not fill it from memory.",
+      "supporting_report_span_ids": [],
+      "confidence": "Proposed generic finance procedure; not inferred from project reports."
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0",
+  "purpose": "Public synthetic test oracle, copied into evaluator-only storage. Never passed to the adapter.",
+  "expected": {
+    "prior": {"operating_profit": "200", "pretax_income": "185", "net_income": "138.75", "eps": "1.3875", "value_per_share": "41.625", "display_value": "41.63"},
+    "base": {"operating_profit": "240", "pretax_income": "225", "net_income": "168.75", "eps": "1.6875", "value_per_share": "50.625", "display_value": "50.63"},
+    "downside": {"operating_profit": "216", "pretax_income": "201", "net_income": "150.75", "eps": "1.5075", "value_per_share": "45.225", "display_value": "45.23"}
+  },
+  "expected_degradation": {
+    "clean": null,
+    "missing_prior": "missing_prior",
+    "share_scale": "unit_scale_mismatch",
+    "conflicting_margin": "conflicting_source",
+    "late_source": "late_source",
+    "unsupported_sentence": "unregistered_prose"
+  }
+}

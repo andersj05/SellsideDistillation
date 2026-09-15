@@ -1,0 +1,18 @@
+{
+  "schema_version": "1.0",
+  "synthetic": true,
+  "entity_id": "synthetic_company",
+  "as_of": "2026-03-01T16:00:00-05:00",
+  "period_start": "2026-01-01",
+  "period_end": "2026-12-31",
+  "scenario_available_at": {
+    "prior": "2026-02-01T07:00:00-05:00",
+    "base": "2026-02-20T07:00:00-05:00",
+    "downside": "2026-02-20T07:00:00-05:00"
+  },
+  "scenarios": {
+    "prior": {"revenue": "1000", "operating_margin": "0.20", "net_interest_expense": "15", "tax_rate": "0.25", "diluted_shares": "100", "assumed_forward_pe": "30"},
+    "base": {"revenue": "1200", "operating_margin": "0.20", "net_interest_expense": "15", "tax_rate": "0.25", "diluted_shares": "100", "assumed_forward_pe": "30"},
+    "downside": {"revenue": "1200", "operating_margin": "0.18", "net_interest_expense": "15", "tax_rate": "0.25", "diluted_shares": "100", "assumed_forward_pe": "30"}
+  }
+}

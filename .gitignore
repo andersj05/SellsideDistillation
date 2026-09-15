@@ -1,0 +1,16 @@
+.venv/
+.uv-cache/
+__pycache__/
+*.py[cod]
+.env
+.env.*
+!.env.example
+data/*
+!data/incoming/
+data/incoming/*
+!data/incoming/.gitkeep
+private_eval/
+runs/
+exports/
+.coverage
+
