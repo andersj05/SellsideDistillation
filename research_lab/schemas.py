@@ -298,6 +298,15 @@ class BudgetLimits(Record):
 
 
 @dataclass(frozen=True, kw_only=True)
+class LabConfig(Record):
+    mode: Literal["fixture"]
+    model_provider: Literal["offline"]
+    model_id: Literal["deterministic-fixture-v1"]
+    data_handling: str
+    budget: BudgetLimits
+
+
+@dataclass(frozen=True, kw_only=True)
 class Issue(Record):
     code: str
     message: str

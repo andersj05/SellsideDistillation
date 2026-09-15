@@ -5,8 +5,10 @@ import re
 import sys
 import tomllib
 import uuid
+from collections.abc import Sequence
 from dataclasses import asdict
 from pathlib import Path
+from typing import Any, Literal
 
 from .adapter import Findings, FixtureAdapter
 from .budget import BudgetExceeded, BudgetMeter
@@ -16,27 +18,19 @@ from .evidence import EvidenceView, build_packet
 from .fixtures import CASES, PROJECT, prepare_case
 from .playbooks import load_playbook
 from .rendering import render_comparison, render_run, report_markdown
-from .schemas import BudgetLimits, Issue, RunRecord
+from .schemas import BudgetLimits, Issue, LabConfig, RunRecord, sha256
 from .serde import atomic_write, digest, from_dict, object_hash, read_json, write_json, write_jsonl
 
 
 def configuration(path: Path | None = None) -> dict:
     config = tomllib.loads((path or PROJECT / "configs" / "lab.toml").read_text(encoding="utf-8"))
-    if (
-        config.get("schema_version") != "1.0"
-        or config.get("mode") != "fixture"
-        or config.get("model_provider") != "offline"
-        or config.get("model_id") != FixtureAdapter.model_id
-    ):
-        raise ValueError("This milestone supports only the offline deterministic fixture route")
-    from_dict(BudgetLimits, config["budget"])
-    return config
+    return asdict(from_dict(LabConfig, config))
 
 
 def code_hash() -> str:
     return digest(
         b"".join(
-            str(p.relative_to(PROJECT)).encode() + b"\0" + p.read_bytes()
+            p.relative_to(PROJECT).as_posix().encode() + b"\0" + p.read_bytes()
             for p in sorted((PROJECT / "research_lab").glob("*.py"))
         )
     )
@@ -61,12 +55,21 @@ def seal(run_dir: Path) -> None:
 
 def verify_run(run_dir: Path) -> dict:
     frozen = read_json(run_dir / "freeze.json")
-    if frozen.get("schema_version") != "1.0":
+    if (
+        not isinstance(frozen, dict)
+        or set(frozen) != {"schema_version", "files"}
+        or frozen["schema_version"] != "1.0"
+        or not isinstance(frozen["files"], dict)
+    ):
         raise ValueError("Unsupported frozen-run schema")
+    for name, expected in frozen["files"].items():
+        if not isinstance(name, str) or not isinstance(expected, str):
+            raise ValueError("Invalid frozen artifact inventory")
+        sha256(expected)
     actual = {
         p.relative_to(run_dir).as_posix()
         for p in run_dir.rglob("*")
-        if p.is_file() and p.name != "freeze.json"
+        if p.is_file() and p != run_dir / "freeze.json"
     }
     if actual != set(frozen["files"]):
         raise ValueError("Frozen run file inventory changed")
@@ -83,22 +86,88 @@ def find_run(root: Path, run_id: str) -> Path:
     return root.resolve() / "runs" / run_id
 
 
-def run_fixture(root: Path, *, case="clean", variant="generic", config=None, protocol=None) -> dict:
-    config = config or configuration()
+def run_fixture(
+    root: Path,
+    *,
+    case: str = "clean",
+    variant: str = "generic",
+    config: dict | None = None,
+    protocol: dict | None = None,
+    run_id: str | None = None,
+) -> dict:
+    config = configuration() if config is None else asdict(from_dict(LabConfig, config))
+    if case not in CASES or variant not in ("generic", "candidate"):
+        raise ValueError("Unknown fixture case or variant")
+    protocol = (
+        protocol
+        if protocol is not None
+        else {
+            **read_json(PROJECT / "configs" / "experiments" / "fixture_smoke.json"),
+            "cases": [case],
+            "variants": [variant],
+            "budget": config["budget"],
+        }
+    )
+    run_id = run_id or "run_" + uuid.uuid4().hex
+    run_dir = find_run(root, run_id)
+    run_dir.mkdir(parents=True, exist_ok=False)
+    started = now()
+    attempt = {
+        "schema_version": "1.0",
+        "run_id": run_id,
+        "case": case,
+        "variant": variant,
+        "started_at": started,
+        "status": "started",
+    }
+    write_json(run_dir / "attempt.json", attempt)
+    write_json(run_dir / "protocol.json", protocol)
+    try:
+        result = execute_fixture(root, run_dir, run_id, started, case, variant, config, protocol)
+        write_json(
+            run_dir / "attempt.json", {**attempt, "status": result["status"], "ended_at": now()}
+        )
+        seal(run_dir)
+        return result
+    except (Exception, KeyboardInterrupt) as exc:
+        # Recovery artifacts are best effort if the storage device itself has failed.
+        failure = {
+            **attempt,
+            "status": "failed",
+            "ended_at": now(),
+            "error_type": type(exc).__name__,
+            "message": str(exc),
+        }
+        write_json(run_dir / "failure.json", failure)
+        write_json(run_dir / "attempt.json", failure)
+        if isinstance(exc, KeyboardInterrupt):
+            raise
+        return {
+            "run_id": run_id,
+            "run_dir": str(run_dir),
+            "status": "failed",
+            "case": case,
+            "variant": variant,
+            "review_available": False,
+            "evaluation": {"status": "unassessed"},
+            "failure": failure,
+        }
+
+
+def execute_fixture(
+    root: Path,
+    run_dir: Path,
+    run_id: str,
+    started: str,
+    case: str,
+    variant: str,
+    config: dict,
+    protocol: dict,
+) -> dict:
     limits = from_dict(BudgetLimits, config["budget"])
     corpus = Corpus(root)
     task = prepare_case(corpus, case)
     playbook = load_playbook(corpus, variant)
-    protocol = protocol or {
-        **read_json(PROJECT / "configs" / "experiments" / "fixture_smoke.json"),
-        "cases": [case],
-        "variants": [variant],
-        "budget": asdict(limits),
-    }
-    run_id = "run_" + uuid.uuid4().hex
-    run_dir = root.resolve() / "runs" / run_id
-    run_dir.mkdir(parents=True, exist_ok=False)
-    started = now()
     meter = BudgetMeter(limits)
     packet = build_packet(corpus, task)
     write_json(run_dir / "protocol.json", protocol)
@@ -107,7 +176,7 @@ def run_fixture(root: Path, *, case="clean", variant="generic", config=None, pro
     write_json(run_dir / "evidence.json", asdict(packet))
     write_jsonl(run_dir / "source_register.jsonl", packet.documents)
     findings = Findings()
-    events = []
+    events: list[dict[str, Any]] = []
 
     def event(name, details):
         events.append(
@@ -134,7 +203,8 @@ def run_fixture(root: Path, *, case="clean", variant="generic", config=None, pro
             "information_cutoff": task.as_of,
         },
     )
-    status, stopping_reason = "completed", "Material fixture questions addressed"
+    status: Literal["completed", "incomplete", "failed", "budget_exhausted"] = "completed"
+    stopping_reason = "Material fixture questions addressed"
     adapter = FixtureAdapter()
     try:
         meter.reserve()
@@ -201,10 +271,10 @@ def run_fixture(root: Path, *, case="clean", variant="generic", config=None, pro
     render_run(
         run_dir, asdict(manifest), task, asdict(packet), asdict(findings), evaluation, playbook
     )
-    seal(run_dir)
     return {
         "run_id": run_id,
         "run_dir": str(run_dir),
+        "review_available": True,
         "status": status,
         "evaluation": evaluation,
         "manifest": asdict(manifest),
@@ -213,63 +283,124 @@ def run_fixture(root: Path, *, case="clean", variant="generic", config=None, pro
     }
 
 
-def compare(root: Path, *, cases=None, config=None) -> dict:
-    cases = list(cases or ["clean"])
+def compare(root: Path, *, cases: Sequence[str] | None = None, config: dict | None = None) -> dict:
+    cases = list(["clean"] if cases is None else cases)
     if not cases or len(set(cases)) != len(cases) or set(cases) - set(CASES):
         raise ValueError("Comparison cases must be a nonempty, unique selection of known fixtures")
-    config = config or configuration()
-    limits = from_dict(BudgetLimits, config["budget"])
+    config = configuration() if config is None else asdict(from_dict(LabConfig, config))
     protocol = {
         **read_json(PROJECT / "configs" / "experiments" / "fixture_smoke.json"),
         "cases": cases,
-        "budget": asdict(limits),
+        "budget": config["budget"],
     }
     experiment_id = "experiment_" + uuid.uuid4().hex
     experiment_dir = root.resolve() / "runs" / "experiments" / experiment_id
     experiment_dir.mkdir(parents=True, exist_ok=False)
-    write_json(experiment_dir / "protocol.json", protocol)  # Predeclare before the first run.
+    write_json(experiment_dir / "protocol.json", protocol)
     labels = ["A", "B"]
     random.Random(17).shuffle(labels)
     assignments = dict(zip(protocol["variants"], labels, strict=True))
+    attempts = [
+        {"case": case, "variant": variant, "run_id": "run_" + uuid.uuid4().hex, "status": "planned"}
+        for case in cases
+        for variant in protocol["variants"]
+    ]
+    write_json(experiment_dir / "attempts.json", attempts)
     results = []
     oracle = read_json(PROJECT / "fixtures" / "evaluator" / "answers.json")
-    for case in cases:
-        for variant in protocol["variants"]:
-            result = run_fixture(root, case=case, variant=variant, config=config, protocol=protocol)
+    for attempt in attempts:
+        case, variant = attempt["case"], attempt["variant"]
+        attempt["status"] = "started"
+        write_json(experiment_dir / "attempts.json", attempts)
+        try:
+            result = run_fixture(
+                root,
+                case=case,
+                variant=variant,
+                config=config,
+                protocol=protocol,
+                run_id=attempt["run_id"],
+            )
+        except Exception as exc:
+            result = {
+                "status": "failed",
+                "review_available": False,
+                "failure": {"error_type": type(exc).__name__, "message": str(exc)},
+            }
+        row = {
+            **attempt,
+            "status": result["status"],
+            "label": assignments[variant],
+            "review_available": result.get("review_available", False),
+        }
+        if "failure" in result:
+            row.update(
+                evaluation_status="unassessed",
+                numeric_correct=0,
+                questions_answered=0,
+                issue_codes=["infrastructure"],
+                tool_calls="unavailable",
+                source_manifest_hash=None,
+                expected_behavior_observed=False,
+                failure=result["failure"],
+            )
+        else:
             evaluation = result["evaluation"]
             score = evaluation["scorecards"]["research"]
             issue_codes = sorted({i["code"] for i in evaluation["issues"]})
             expected_code = oracle["expected_degradation"][case]
-            results.append(
-                {
-                    "case": case,
-                    "variant": variant,
-                    "label": assignments[variant],
-                    "run_id": result["run_id"],
-                    "status": result["status"],
-                    "evaluation_status": evaluation["status"],
-                    "numeric_correct": score["correct_numeric_outputs"],
-                    "questions_answered": len(score["answered_questions"]),
-                    "issue_codes": issue_codes,
-                    "tool_calls": result["manifest"]["usage"]["tool_calls"],
-                    "source_manifest_hash": result["manifest"]["source_manifest_hash"],
-                    "expected_behavior_observed": expected_code in issue_codes
+            expected_status = (
+                "failed"
+                if case == "unsupported_sentence"
+                else "incomplete"
+                if expected_code
+                else "completed"
+            )
+            observed = (
+                result["status"] == expected_status
+                and "infrastructure" not in issue_codes
+                and (
+                    expected_code in issue_codes
                     if expected_code
-                    else evaluation["status"] == "passed_automated_checks",
-                }
+                    else evaluation["status"] == "passed_automated_checks"
+                )
             )
-            write_json(
-                experiment_dir / "comparison.json",
-                {
-                    "experiment_id": experiment_id,
-                    "protocol": protocol,
-                    "assignments": assignments,
-                    "results": results,
-                },
+            row.update(
+                evaluation_status=evaluation["status"],
+                numeric_correct=score["correct_numeric_outputs"],
+                questions_answered=len(score["answered_questions"]),
+                issue_codes=issue_codes,
+                tool_calls=result["manifest"]["usage"]["tool_calls"],
+                source_manifest_hash=result["manifest"]["source_manifest_hash"],
+                expected_behavior_observed=observed,
             )
+        attempt["status"] = result["status"]
+        results.append(row)
+        write_json(experiment_dir / "attempts.json", attempts)
+        write_json(
+            experiment_dir / "comparison.json",
+            {
+                "experiment_id": experiment_id,
+                "protocol": protocol,
+                "assignments": assignments,
+                "results": results,
+            },
+        )
     for case in cases:
         paired = [r for r in results if r["case"] == case]
-        if len({r["source_manifest_hash"] for r in paired}) != 1:
-            raise ValueError("Comparison evidence parity failed")
+        hashes = {r["source_manifest_hash"] for r in paired}
+        if None not in hashes and len(hashes) != 1:
+            for row in paired:
+                row["expected_behavior_observed"] = False
+                row["issue_codes"].append("comparison_evidence_mismatch")
+    write_json(
+        experiment_dir / "comparison.json",
+        {
+            "experiment_id": experiment_id,
+            "protocol": protocol,
+            "assignments": assignments,
+            "results": results,
+        },
+    )
     review = render_comparison(experiment_dir, results, assignments, protocol)
     return {"experiment_id": experiment_id, "review": str(review), "results": results}

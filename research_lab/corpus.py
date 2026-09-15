@@ -8,11 +8,13 @@ from contextlib import contextmanager
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Literal
 
 from .schemas import Document, EvidenceSpan, Fact
-from .serde import digest, encode, from_dict, write_json
+from .serde import atomic_write, digest, encode, from_dict, load_json, write_json
 
 SUPPORTED_INPUTS = {".md", ".txt", ".csv", ".pdf"}
+MAX_SOURCE_BYTES = 64 * 1024 * 1024
 FACT_COLUMNS = (
     "entity_id",
     "metric",
@@ -34,16 +36,24 @@ def now() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def read_source(path: Path) -> bytes:
+    with path.open("rb") as handle:
+        payload = handle.read(MAX_SOURCE_BYTES + 1)
+    if len(payload) > MAX_SOURCE_BYTES:
+        raise ValueError("Source exceeds the 64 MiB intake limit")
+    return payload
+
+
 def extract(document: Document, payload: bytes) -> list[EvidenceSpan]:
     suffix = Path(document.original_filename).suffix.lower()
     if suffix == ".pdf":
         return []  # Retain the PDF; do not fabricate locations without a parser.
     text = payload.decode("utf-8-sig")
     if suffix == ".csv":
-        reader = csv.DictReader(io.StringIO(text, newline=""))
+        reader = csv.DictReader(io.StringIO(text, newline=""), strict=True)
         if not reader.fieldnames or len(set(reader.fieldnames)) != len(reader.fieldnames):
             raise ValueError("CSV requires unique column names")
-        records = []
+        records: list[tuple[str, str, Literal["csv_record", "text_lines"]]] = []
         for number, row in enumerate(reader, start=1):
             if None in row or None in row.values():
                 raise ValueError(f"Malformed CSV record {number}")
@@ -141,15 +151,17 @@ class Corpus:
     ) -> Document:
         if path.suffix.lower() not in SUPPORTED_INPUTS:
             raise ValueError(f"Unsupported input format: {path.suffix}")
-        payload = path.read_bytes()
+        payload = read_source(path)
         content_hash = digest(payload)
         identifier = "doc_" + content_hash
         with self.connect() as db:
+            # Serialize inventory/object creation across cooperating importers.
+            db.execute("BEGIN IMMEDIATE")
             row = db.execute(
                 "SELECT manifest FROM documents WHERE document_id=?", (identifier,)
             ).fetchone()
             if row:
-                document = from_dict(Document, json.loads(row[0]))
+                document = from_dict(Document, load_json(row[0]))
                 if document.role != role:
                     raise ValueError("Duplicate source cannot cross corpus splits")
                 if available_at is not None and available_at != document.available_at:
@@ -179,13 +191,12 @@ class Corpus:
             )
             spans = extract(document, payload)
             original = self.originals / content_hash
-            # Exclusive create prevents source replacement. An existing object must be identical.
-            try:
-                with original.open("xb") as handle:
-                    handle.write(payload)
-            except FileExistsError:
-                if digest(original.read_bytes()) != content_hash:
-                    raise ValueError("Corrupt source object") from None
+            # Publish complete bytes atomically while holding the inventory write lock.
+            if original.exists():
+                if digest(read_source(original)) != content_hash:
+                    raise ValueError("Corrupt source object")
+            else:
+                atomic_write(original, payload)
             write_json(
                 self.derived / f"{identifier}.json",
                 {"document": asdict(document), "spans": [asdict(s) for s in spans]},
@@ -204,11 +215,11 @@ class Corpus:
             ).fetchone()
         if row is None:
             raise ValueError("Unknown document ID")
-        return from_dict(Document, json.loads(row[0]))
+        return from_dict(Document, load_json(row[0]))
 
     def read_bytes(self, document_id: str) -> bytes:
         document = self.document(document_id)
-        payload = (self.originals / document.content_sha256).read_bytes()
+        payload = read_source(self.originals / document.content_sha256)
         if digest(payload) != document.content_sha256:
             raise ValueError("Source content hash mismatch")
         return payload
@@ -221,4 +232,4 @@ class Corpus:
     def inventory(self) -> list[Document]:
         with self.connect() as db:
             rows = db.execute("SELECT manifest FROM documents ORDER BY document_id").fetchall()
-        return [from_dict(Document, json.loads(row[0])) for row in rows]
+        return [from_dict(Document, load_json(row[0])) for row in rows]

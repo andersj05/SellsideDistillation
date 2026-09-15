@@ -1,9 +1,11 @@
 """Portable command-line entry point: python -m research_lab."""
 
 import argparse
+import csv
 import json
 import sqlite3
 import sys
+import uuid
 from dataclasses import asdict
 from pathlib import Path
 
@@ -59,11 +61,11 @@ def parser() -> argparse.ArgumentParser:
     return app
 
 
-def output(value) -> None:
+def output(value: object) -> None:
     print(json.dumps(value, indent=2, ensure_ascii=False))
 
 
-def main(argv=None) -> int:
+def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     root = args.root.resolve()
     try:
@@ -127,7 +129,10 @@ def main(argv=None) -> int:
                     "run_id": result["run_id"],
                     "status": result["status"],
                     "evaluation_status": result["evaluation"]["status"],
-                    "review": str(Path(result["run_dir"]) / "review.html"),
+                    "review": str(Path(result["run_dir"]) / "review.html")
+                    if result["review_available"]
+                    else None,
+                    "attempt": str(Path(result["run_dir"]) / "attempt.json"),
                 }
             )
             return 0 if result["status"] == "completed" else 1
@@ -167,11 +172,11 @@ def main(argv=None) -> int:
             manifest = verify_run(path)
             result = evaluate_bundle(path, oracle_for(root, manifest["task_id"]))
             # Regrading never edits the sealed run. The export is a separate derivative.
-            destination = root / "exports" / f"{args.run}.evaluation.json"
+            destination = root / "exports" / f"{args.run}.{uuid.uuid4().hex}.evaluation.json"
             write_json(destination, result)
             output({"status": result["status"], "evaluation": str(destination)})
             return 0 if result["status"] == "passed_automated_checks" else 1
         return 0
-    except (ValueError, OSError, sqlite3.Error) as exc:
+    except (ValueError, OSError, sqlite3.Error, csv.Error) as exc:
         print(f"lab: {exc}", file=sys.stderr)
         return 2

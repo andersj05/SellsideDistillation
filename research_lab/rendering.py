@@ -177,6 +177,8 @@ def render_comparison(
     rows = []
     for r in results:
         href = f"../../{r['run_id']}/review.html"
+        if not r.get("review_available", True):
+            href = "attempts.json"
         rows.append(
             f"<tr data-case='{escape(r['case'], quote=True)}'><td><a href='{escape(href, quote=True)}'>{escape(r['case'].replace('_', ' '))}</a></td>"
             f"<td>{escape(r['label'])}</td><td>{status_tag(r['evaluation_status'])}</td><td class='number'>{r['numeric_correct']}/15</td>"
