@@ -5,21 +5,29 @@ import json
 import os
 import time
 import uuid
+from collections.abc import Iterable
 from dataclasses import asdict, fields, is_dataclass
+from functools import lru_cache
 from pathlib import Path
 from types import UnionType
-from typing import Literal, Union, get_args, get_origin, get_type_hints
+from typing import Any, Literal, Union, get_args, get_origin, get_type_hints
 
 
 def digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def encode(value) -> bytes:
+def json_default(value: object) -> dict:
+    if is_dataclass(value) and not isinstance(value, type):
+        return asdict(value)
+    raise TypeError(f"Unsupported JSON value: {type(value).__name__}")
+
+
+def encode(value: object) -> bytes:
     return (
         json.dumps(
             value,
-            default=lambda x: asdict(x) if is_dataclass(x) else str(x),
+            default=json_default,
             indent=2,
             sort_keys=True,
             ensure_ascii=False,
@@ -29,7 +37,7 @@ def encode(value) -> bytes:
     ).encode("utf-8")
 
 
-def object_hash(value) -> str:
+def object_hash(value: object) -> str:
     return digest(encode(value))
 
 
@@ -55,16 +63,17 @@ def atomic_write(path: Path, data: bytes) -> None:
         temporary.unlink(missing_ok=True)
 
 
-def write_json(path: Path, value) -> None:
+def write_json(path: Path, value: object) -> None:
     atomic_write(path, encode(value))
 
 
-def write_jsonl(path: Path, values) -> None:
+def write_jsonl(path: Path, values: Iterable[object]) -> None:
     atomic_write(
         path,
         b"".join(
             json.dumps(
-                asdict(v) if is_dataclass(v) else v,
+                v,
+                default=json_default,
                 sort_keys=True,
                 ensure_ascii=False,
                 allow_nan=False,
@@ -75,11 +84,28 @@ def write_jsonl(path: Path, values) -> None:
     )
 
 
-def read_json(path: Path):
-    return json.loads(path.read_text(encoding="utf-8"))
+def unique_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"Duplicate JSON key: {key}")
+        result[key] = value
+    return result
 
 
-def decode(annotation, value):
+def reject_constant(value: str) -> None:
+    raise ValueError(f"Non-finite JSON number: {value}")
+
+
+def load_json(text: str) -> Any:
+    return json.loads(text, object_pairs_hook=unique_pairs, parse_constant=reject_constant)
+
+
+def read_json(path: Path) -> Any:
+    return load_json(path.read_text(encoding="utf-8"))
+
+
+def decode(annotation: Any, value: Any) -> Any:
     origin, args = get_origin(annotation), get_args(annotation)
     if origin in (Union, UnionType):
         for choice in args:
@@ -89,7 +115,7 @@ def decode(annotation, value):
                 pass
         raise ValueError(f"Value does not match {annotation}")
     if origin is Literal:
-        if value not in args:
+        if not any(type(value) is type(choice) and value == choice for choice in args):
             raise ValueError(f"Expected one of {args}, got {value!r}")
         return value
     if origin is list:
@@ -100,7 +126,10 @@ def decode(annotation, value):
         if not isinstance(value, dict):
             raise ValueError("Expected an object")
         return {decode(args[0], k): decode(args[1], v) for k, v in value.items()}
-    if is_dataclass(annotation):
+    if isinstance(annotation, type) and is_dataclass(annotation):
+        if isinstance(value, annotation):
+            validate_record(value)
+            return value
         return from_dict(annotation, value)
     if annotation is type(None) and value is None:
         return None
@@ -109,13 +138,25 @@ def decode(annotation, value):
     return value
 
 
-def from_dict(cls, value):
+@lru_cache(maxsize=64)
+def record_hints(cls: type) -> dict[str, Any]:
+    return get_type_hints(cls)
+
+
+def validate_record(value: Any) -> None:
+    for name, annotation in record_hints(value.__class__).items():
+        decode(annotation, getattr(value, name))
+
+
+def from_dict[T](cls: type[T], value: Any) -> T:
+    if not is_dataclass(cls):
+        raise TypeError("Expected a dataclass type")
     if not isinstance(value, dict):
         raise ValueError(f"{cls.__name__} requires an object")
     unknown = set(value) - {f.name for f in fields(cls)}
     if unknown:
         raise ValueError(f"Unknown {cls.__name__} fields: {sorted(unknown)}")
-    hints = get_type_hints(cls)
+    hints = record_hints(cls)
     try:
         return cls(**{k: decode(hints[k], v) for k, v in value.items()})
     except TypeError as exc:

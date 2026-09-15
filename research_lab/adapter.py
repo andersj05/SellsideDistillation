@@ -7,7 +7,7 @@ from typing import Protocol
 
 from .budget import BudgetMeter
 from .evidence import EvidenceView
-from .finance import FinancialError, comparable, display, margin_change, run_calculation
+from .finance import FinancialError, comparable, difference, display, margin_change, run_calculation
 from .schemas import Calculation, Claim, Issue, Task
 
 
@@ -135,7 +135,9 @@ class FixtureAdapter:
             comparable(scenario_facts[left] + scenario_facts[right])
             a = {f.metric: f for f in scenario_facts[left]}
             b = {f.metric: f for f in scenario_facts[right]}
-            if any(a[key].value != b[key].value for key in a if key != changed_metric):
+            if any(
+                Decimal(a[key].value) != Decimal(b[key].value) for key in a if key != changed_metric
+            ):
                 raise FinancialError(
                     "multiple_driver_change",
                     "The scenarios change more than the stated single driver.",
@@ -145,8 +147,9 @@ class FixtureAdapter:
         try:
             bridge = pair("prior", "base", "revenue")
             if bridge:
-                delta = Decimal(calculations["base"].outputs["value_per_share"]) - Decimal(
-                    calculations["prior"].outputs["value_per_share"]
+                delta = difference(
+                    calculations["prior"].outputs["value_per_share"],
+                    calculations["base"].outputs["value_per_share"],
                 )
                 claim(
                     "revision_bridge",
@@ -161,8 +164,9 @@ class FixtureAdapter:
             if sensitivity:
                 a, b = sensitivity
                 change = margin_change(a["operating_margin"].value, b["operating_margin"].value)
-                delta = Decimal(calculations["downside"].outputs["value_per_share"]) - Decimal(
-                    calculations["base"].outputs["value_per_share"]
+                delta = difference(
+                    calculations["base"].outputs["value_per_share"],
+                    calculations["downside"].outputs["value_per_share"],
                 )
                 claim(
                     "margin_sensitivity",
@@ -200,7 +204,7 @@ class FixtureAdapter:
         ]
         if (
             pe_facts
-            and len({f.value for f in pe_facts}) == 1
+            and len({Decimal(f.value) for f in pe_facts}) == 1
             and all(f.value_type == "assumption" for f in pe_facts)
         ):
             claim(

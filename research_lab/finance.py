@@ -1,8 +1,10 @@
 """Registered financial operations. No arbitrary expressions or generated code."""
 
-from decimal import ROUND_HALF_UP, Decimal, localcontext
+from decimal import ROUND_HALF_EVEN, ROUND_HALF_UP, Context, Decimal, localcontext
 
 from .schemas import Calculation, Fact, decimal
+
+FINANCIAL_CONTEXT = Context(prec=64, rounding=ROUND_HALF_EVEN)
 
 INPUTS = {
     "revenue": ("USD", "million"),
@@ -28,7 +30,13 @@ class FinancialError(ValueError):
 
 
 def display(value: str | Decimal) -> str:
-    return str(Decimal(value).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+    with localcontext(FINANCIAL_CONTEXT):
+        return str(Decimal(value).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+
+
+def difference(old: str, new: str) -> Decimal:
+    with localcontext(FINANCIAL_CONTEXT):
+        return decimal(new) - decimal(old)
 
 
 def comparable(facts: list[Fact]) -> None:
@@ -90,8 +98,7 @@ def operating_model(facts: list[Fact], scenario: str) -> Calculation:
             "invalid_domain",
             "Fixture tax and margin assumptions must be ratios between zero and one.",
         )
-    with localcontext() as ctx:
-        ctx.prec = 40
+    with localcontext(FINANCIAL_CONTEXT):
         operating_profit = values["revenue"] * values["operating_margin"]
         pretax = operating_profit - values["net_interest_expense"]
         if pretax < 0:
@@ -120,8 +127,9 @@ def operating_model(facts: list[Fact], scenario: str) -> Calculation:
 
 
 def margin_change(old: str, new: str) -> dict[str, str]:
-    change = decimal(new) - decimal(old)
-    return {"percentage_points": str(change * 100), "basis_points": str(change * 10000)}
+    with localcontext(FINANCIAL_CONTEXT):
+        change = decimal(new) - decimal(old)
+        return {"percentage_points": str(change * 100), "basis_points": str(change * 10000)}
 
 
 OPERATIONS = {"operating_model": operating_model}

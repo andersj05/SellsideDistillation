@@ -6,6 +6,8 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Literal
 
+from .serde import validate_record
+
 Origin = Literal["observed", "inferred", "proposed"]
 Verification = Literal[
     "verified", "partially_verified", "unverified", "contradicted", "not_applicable"
@@ -23,12 +25,19 @@ def timestamp(value: str) -> datetime:
 def decimal(value: str) -> Decimal:
     if not isinstance(value, str):
         raise ValueError("Financial values must be decimal strings")
+    if len(value) > 96 or not re.fullmatch(
+        r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]{1,3})?", value
+    ):
+        raise ValueError("Invalid or oversized decimal string")
     try:
         number = Decimal(value)
     except InvalidOperation as exc:
         raise ValueError("Invalid decimal") from exc
     if not number.is_finite():
         raise ValueError("Financial values must be finite")
+    parts = number.as_tuple()
+    if len(parts.digits) > 64 or number.adjusted() > 48 or int(parts.exponent) < -64:
+        raise ValueError("Decimal exceeds the supported fixture precision or magnitude")
     return number
 
 
@@ -42,6 +51,7 @@ class Record:
     schema_version: str = "1.0"
 
     def __post_init__(self):
+        validate_record(self)
         if self.schema_version != "1.0":
             raise ValueError(
                 f"Unsupported schema version {self.schema_version}; migration required"
@@ -319,7 +329,12 @@ class RunRecord(Record):
     prompt_hash: str | None = None
     generation_parameters: dict[str, str] = field(default_factory=dict)
     permitted_tools: list[str] = field(
-        default_factory=lambda: ["get_financial_facts", "read_source_span", "run_calculation"]
+        default_factory=lambda: [
+            "get_financial_facts",
+            "read_source_span",
+            "search_evidence",
+            "run_calculation",
+        ]
     )
     parser_version: str = "native_text_csv_v1"
     replicate: int = 1

@@ -1,11 +1,13 @@
 import unittest
 from dataclasses import replace
-from decimal import Decimal
+from decimal import ROUND_DOWN, Decimal, localcontext
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from research_lab.adapter import Findings, FixtureAdapter
+from research_lab.budget import BudgetMeter
 from research_lab.corpus import Corpus
-from research_lab.evidence import build_packet
+from research_lab.evidence import EvidencePacket, EvidenceView, build_packet
 from research_lab.finance import (
     FinancialError,
     display,
@@ -14,6 +16,7 @@ from research_lab.finance import (
     run_calculation,
 )
 from research_lab.fixtures import prepare_case
+from research_lab.schemas import BudgetLimits, Task
 
 
 class FinanceTests(unittest.TestCase):
@@ -46,6 +49,49 @@ class FinanceTests(unittest.TestCase):
         result = margin_change(".20", ".18")
         self.assertEqual(Decimal(result["percentage_points"]), -2)
         self.assertEqual(Decimal(result["basis_points"]), -200)
+
+    def test_arithmetic_is_independent_of_ambient_decimal_context(self):
+        with localcontext() as context:
+            context.prec = 2
+            context.rounding = ROUND_DOWN
+            self.assertEqual(display("50.625"), "50.63")
+            result = operating_model(self.scenario(), "base")
+            self.assertEqual(Decimal(result.outputs["value_per_share"]), Decimal("50.625"))
+            self.assertEqual(
+                Decimal(margin_change(".2001", ".18")["basis_points"]), Decimal("-201")
+            )
+
+    def test_equivalent_decimal_strings_do_not_create_spurious_driver_changes(self):
+        facts = [
+            replace(f, value=f.value + "0" if "." in f.value else f.value + ".0")
+            if f.scenario == "base"
+            else f
+            for f in self.packet.facts
+        ]
+        packet = EvidencePacket(self.packet.documents, self.packet.spans, facts)
+        meter = BudgetMeter(BudgetLimits())
+        findings = Findings()
+        task = Task(
+            task_id="test",
+            entity_id=facts[0].entity_id,
+            question="Test",
+            as_of="2026-09-01T00:00:00Z",
+            allowed_sources=[],
+        )
+        with localcontext() as context:
+            context.prec = 2
+            FixtureAdapter().generate(
+                task,
+                EvidenceView(packet, meter),
+                {"calculate_forecasts", "explain_changes", "preserve_gaps"},
+                meter,
+                findings,
+                lambda *_: None,
+            )
+        self.assertFalse(findings.issues)
+        self.assertEqual(
+            set(findings.answered_questions), {"revision", "sensitivity", "assumption"}
+        )
 
     def test_more_revenue_increases_profit_with_other_inputs_fixed(self):
         original = self.scenario()

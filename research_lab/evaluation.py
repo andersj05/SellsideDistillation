@@ -12,7 +12,7 @@ from pathlib import Path
 
 from .fixtures import PROJECT
 from .schemas import Calculation, Claim, Document, EvidenceSpan, Fact, Task, timestamp
-from .serde import digest, from_dict, object_hash, read_json, write_json
+from .serde import digest, from_dict, load_json, object_hash, read_json, write_json
 
 
 def half_up(value: Fraction) -> str:
@@ -39,7 +39,7 @@ def oracle_for(root: Path, task_id: str) -> dict:
 
 def read_records[T](path: Path, cls: type[T]) -> list[T]:
     return [
-        from_dict(cls, json.loads(line))
+        from_dict(cls, load_json(line))
         for line in path.read_text(encoding="utf-8").splitlines()
         if line
     ]
