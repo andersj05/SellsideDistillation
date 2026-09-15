@@ -1,13 +1,15 @@
 """Core contracts for schema 1.0. Financial decimals are serialized as strings."""
 
+import re
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Literal
-import re
 
 Origin = Literal["observed", "inferred", "proposed"]
-Verification = Literal["verified", "partially_verified", "unverified", "contradicted", "not_applicable"]
+Verification = Literal[
+    "verified", "partially_verified", "unverified", "contradicted", "not_applicable"
+]
 Role = Literal["discovery", "development", "locked_evaluation", "archive"]
 
 
@@ -41,7 +43,9 @@ class Record:
 
     def __post_init__(self):
         if self.schema_version != "1.0":
-            raise ValueError(f"Unsupported schema version {self.schema_version}; migration required")
+            raise ValueError(
+                f"Unsupported schema version {self.schema_version}; migration required"
+            )
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -72,7 +76,11 @@ class Document(Record):
         for value in (self.published_at, self.available_at):
             if value is not None:
                 timestamp(value)
-        if self.published_at and self.available_at and timestamp(self.available_at) < timestamp(self.published_at):
+        if (
+            self.published_at
+            and self.available_at
+            and timestamp(self.available_at) < timestamp(self.published_at)
+        ):
             raise ValueError("Availability precedes publication")
         if self.page_count is not None and self.page_count < 1:
             raise ValueError("Page count must be positive or unknown")
@@ -104,9 +112,13 @@ class EvidenceSpan(Record):
         if self.page_index is not None and self.page_index < 0:
             raise ValueError("PDF page indices are zero-based")
         if self.bbox is not None:
-            if (len(self.bbox) != 4 or not all(0 <= x <= 1 for x in self.bbox)
-                    or self.bbox[0] > self.bbox[2] or self.bbox[1] > self.bbox[3]
-                    or self.coordinate_system != "normalized_top_left"):
+            if (
+                len(self.bbox) != 4
+                or not all(0 <= x <= 1 for x in self.bbox)
+                or self.bbox[0] > self.bbox[2]
+                or self.bbox[1] > self.bbox[3]
+                or self.coordinate_system != "normalized_top_left"
+            ):
                 raise ValueError("Invalid normalized top-left bounding box")
         if self.location_kind == "pdf_page" and self.page_index is None:
             raise ValueError("PDF evidence needs a page index")
@@ -237,7 +249,9 @@ class Task(Record):
     allowed_sources: list[SourceRef]
     report_family: str = "earnings_update"
     evaluation_track: Literal["development_supplied_evidence"] = "development_supplied_evidence"
-    required_sections: list[str] = field(default_factory=lambda: ["Estimate bridge", "Margin sensitivity", "Assumptions and gaps"])
+    required_sections: list[str] = field(
+        default_factory=lambda: ["Estimate bridge", "Margin sensitivity", "Assumptions and gaps"]
+    )
     output_word_budget: int = 1500
 
     def __post_init__(self):
@@ -260,8 +274,13 @@ class BudgetLimits(Record):
 
     def __post_init__(self):
         super().__post_init__()
-        for value in (self.max_elapsed_seconds, self.max_model_calls, self.max_tool_calls,
-                      self.max_tokens, self.max_repair_rounds):
+        for value in (
+            self.max_elapsed_seconds,
+            self.max_model_calls,
+            self.max_tool_calls,
+            self.max_tokens,
+            self.max_repair_rounds,
+        ):
             if type(value) is not int or value < 0:
                 raise ValueError("Budget caps must be nonnegative integers")
         if decimal(self.max_cost_usd) < 0:
@@ -299,6 +318,8 @@ class RunRecord(Record):
     workflow_version: str = "fixture_v1"
     prompt_hash: str | None = None
     generation_parameters: dict[str, str] = field(default_factory=dict)
-    permitted_tools: list[str] = field(default_factory=lambda: ["get_financial_facts", "read_source_span", "run_calculation"])
+    permitted_tools: list[str] = field(
+        default_factory=lambda: ["get_financial_facts", "read_source_span", "run_calculation"]
+    )
     parser_version: str = "native_text_csv_v1"
     replicate: int = 1

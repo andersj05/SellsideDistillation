@@ -1,7 +1,7 @@
+import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
-import unittest
 
 from research_lab.serde import atomic_write
 

@@ -1,14 +1,14 @@
 """Versioned JSON records and atomic artifact writes; no implicit coercion."""
 
-from dataclasses import asdict, fields, is_dataclass
-from pathlib import Path
-from typing import Literal, Union, get_args, get_origin, get_type_hints
-from types import UnionType
 import hashlib
 import json
 import os
 import time
 import uuid
+from dataclasses import asdict, fields, is_dataclass
+from pathlib import Path
+from types import UnionType
+from typing import Literal, Union, get_args, get_origin, get_type_hints
 
 
 def digest(data: bytes) -> str:
@@ -16,8 +16,17 @@ def digest(data: bytes) -> str:
 
 
 def encode(value) -> bytes:
-    return (json.dumps(value, default=lambda x: asdict(x) if is_dataclass(x) else str(x),
-                       indent=2, sort_keys=True, ensure_ascii=False, allow_nan=False) + "\n").encode("utf-8")
+    return (
+        json.dumps(
+            value,
+            default=lambda x: asdict(x) if is_dataclass(x) else str(x),
+            indent=2,
+            sort_keys=True,
+            ensure_ascii=False,
+            allow_nan=False,
+        )
+        + "\n"
+    ).encode("utf-8")
 
 
 def object_hash(value) -> str:
@@ -41,7 +50,7 @@ def atomic_write(path: Path, data: bytes) -> None:
                 # Retry only recognized sharing/access errors, with a bounded 0.62s delay.
                 if getattr(exc, "winerror", None) not in (5, 32, 33) or attempt == 5:
                     raise
-                time.sleep(0.02 * 2 ** attempt)
+                time.sleep(0.02 * 2**attempt)
     finally:
         temporary.unlink(missing_ok=True)
 
@@ -51,9 +60,19 @@ def write_json(path: Path, value) -> None:
 
 
 def write_jsonl(path: Path, values) -> None:
-    atomic_write(path, b"".join(json.dumps(asdict(v) if is_dataclass(v) else v,
-                                         sort_keys=True, ensure_ascii=False, allow_nan=False).encode("utf-8")
-                               + b"\n" for v in values))
+    atomic_write(
+        path,
+        b"".join(
+            json.dumps(
+                asdict(v) if is_dataclass(v) else v,
+                sort_keys=True,
+                ensure_ascii=False,
+                allow_nan=False,
+            ).encode("utf-8")
+            + b"\n"
+            for v in values
+        ),
+    )
 
 
 def read_json(path: Path):

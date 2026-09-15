@@ -1,25 +1,37 @@
 """Immutable source bytes, SQLite inventory, and stable native-text locations."""
 
-from contextlib import contextmanager
-from dataclasses import asdict
-from datetime import datetime, timezone
-from pathlib import Path
 import csv
 import io
 import json
 import sqlite3
+from contextlib import contextmanager
+from dataclasses import asdict
+from datetime import UTC, datetime
+from pathlib import Path
 
 from .schemas import Document, EvidenceSpan, Fact
 from .serde import digest, encode, from_dict, write_json
 
 SUPPORTED_INPUTS = {".md", ".txt", ".csv", ".pdf"}
-FACT_COLUMNS = ("entity_id", "metric", "value", "displayed_value", "unit", "scale",
-                "period_start", "period_end", "period_type", "accounting_basis",
-                "value_type", "scenario", "available_at")
+FACT_COLUMNS = (
+    "entity_id",
+    "metric",
+    "value",
+    "displayed_value",
+    "unit",
+    "scale",
+    "period_start",
+    "period_end",
+    "period_type",
+    "accounting_basis",
+    "value_type",
+    "scenario",
+    "available_at",
+)
 
 
 def now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def extract(document: Document, payload: bytes) -> list[EvidenceSpan]:
@@ -37,13 +49,24 @@ def extract(document: Document, payload: bytes) -> list[EvidenceSpan]:
                 raise ValueError(f"Malformed CSV record {number}")
             records.append((f"record:{number}", json.dumps(row, sort_keys=True), "csv_record"))
     else:
-        records = [(f"line:{n}", line, "text_lines")
-                   for n, line in enumerate(text.splitlines(), start=1) if line.strip()]
-    return [EvidenceSpan(span_id=f"{document.document_id}:{locator}",
-                         document_id=document.document_id, document_sha256=document.content_sha256,
-                         text=body, excerpt=body[:300], location_kind=kind, locator=locator,
-                         extraction_method="csv_dictreader_v1" if kind == "csv_record" else "utf8_lines_v1")
-            for locator, body, kind in records]
+        records = [
+            (f"line:{n}", line, "text_lines")
+            for n, line in enumerate(text.splitlines(), start=1)
+            if line.strip()
+        ]
+    return [
+        EvidenceSpan(
+            span_id=f"{document.document_id}:{locator}",
+            document_id=document.document_id,
+            document_sha256=document.content_sha256,
+            text=body,
+            excerpt=body[:300],
+            location_kind=kind,
+            locator=locator,
+            extraction_method="csv_dictreader_v1" if kind == "csv_record" else "utf8_lines_v1",
+        )
+        for locator, body, kind in records
+    ]
 
 
 def facts_from_spans(spans: list[EvidenceSpan]) -> list[Fact]:
@@ -56,8 +79,16 @@ def facts_from_spans(spans: list[EvidenceSpan]) -> list[Fact]:
             continue  # Ordinary CSV is still inspectable; only the documented schema becomes facts.
         values = {key: row[key] for key in FACT_COLUMNS}
         values["available_at"] = values["available_at"] or None
-        facts.append(from_dict(Fact, {**values, "fact_id": "fact_" + digest(span.span_id.encode()),
-                                     "source_span_ids": [span.span_id]}))
+        facts.append(
+            from_dict(
+                Fact,
+                {
+                    **values,
+                    "fact_id": "fact_" + digest(span.span_id.encode()),
+                    "source_span_ids": [span.span_id],
+                },
+            )
+        )
     return facts
 
 
@@ -81,7 +112,10 @@ class Corpus:
                     document_id TEXT NOT NULL, filename TEXT NOT NULL,
                     PRIMARY KEY (document_id, filename));
             """)
-            if db.execute("SELECT value FROM metadata WHERE key='schema_version'").fetchone()[0] != "1.0":
+            if (
+                db.execute("SELECT value FROM metadata WHERE key='schema_version'").fetchone()[0]
+                != "1.0"
+            ):
                 raise ValueError("Unsupported corpus schema; explicit migration required")
 
     @contextmanager
@@ -95,16 +129,25 @@ class Corpus:
         finally:
             connection.close()
 
-    def ingest(self, path: Path, *, role: str, available_at: str | None = None,
-               published_at: str | None = None, availability_evidence: str = "Unknown",
-               report_family: str = "unknown") -> Document:
+    def ingest(
+        self,
+        path: Path,
+        *,
+        role: str,
+        available_at: str | None = None,
+        published_at: str | None = None,
+        availability_evidence: str = "Unknown",
+        report_family: str = "unknown",
+    ) -> Document:
         if path.suffix.lower() not in SUPPORTED_INPUTS:
             raise ValueError(f"Unsupported input format: {path.suffix}")
         payload = path.read_bytes()
         content_hash = digest(payload)
         identifier = "doc_" + content_hash
         with self.connect() as db:
-            row = db.execute("SELECT manifest FROM documents WHERE document_id=?", (identifier,)).fetchone()
+            row = db.execute(
+                "SELECT manifest FROM documents WHERE document_id=?", (identifier,)
+            ).fetchone()
             if row:
                 document = from_dict(Document, json.loads(row[0]))
                 if document.role != role:
@@ -116,12 +159,24 @@ class Corpus:
                 self.read_bytes(document.document_id)
                 db.execute("INSERT OR IGNORE INTO aliases VALUES (?, ?)", (identifier, path.name))
                 return document
-            document = from_dict(Document, dict(document_id=identifier, content_sha256=content_hash,
-                original_filename=path.name, role=role, report_family=report_family,
-                ingested_at=now(), published_at=published_at, available_at=available_at,
-                publication_time_confidence="known" if published_at else "unknown",
-                availability_evidence=availability_evidence,
-                extraction_status="pending_parser" if path.suffix.lower() == ".pdf" else "extracted"))
+            document = from_dict(
+                Document,
+                dict(
+                    document_id=identifier,
+                    content_sha256=content_hash,
+                    original_filename=path.name,
+                    role=role,
+                    report_family=report_family,
+                    ingested_at=now(),
+                    published_at=published_at,
+                    available_at=available_at,
+                    publication_time_confidence="known" if published_at else "unknown",
+                    availability_evidence=availability_evidence,
+                    extraction_status="pending_parser"
+                    if path.suffix.lower() == ".pdf"
+                    else "extracted",
+                ),
+            )
             spans = extract(document, payload)
             original = self.originals / content_hash
             # Exclusive create prevents source replacement. An existing object must be identical.
@@ -130,17 +185,23 @@ class Corpus:
                     handle.write(payload)
             except FileExistsError:
                 if digest(original.read_bytes()) != content_hash:
-                    raise ValueError("Corrupt source object")
-            write_json(self.derived / f"{identifier}.json", {"document": asdict(document),
-                                                          "spans": [asdict(s) for s in spans]})
-            db.execute("INSERT INTO documents VALUES (?, ?, ?, ?)",
-                       (identifier, content_hash, role, encode(document).decode()))
+                    raise ValueError("Corrupt source object") from None
+            write_json(
+                self.derived / f"{identifier}.json",
+                {"document": asdict(document), "spans": [asdict(s) for s in spans]},
+            )
+            db.execute(
+                "INSERT INTO documents VALUES (?, ?, ?, ?)",
+                (identifier, content_hash, role, encode(document).decode()),
+            )
             db.execute("INSERT INTO aliases VALUES (?, ?)", (identifier, path.name))
         return document
 
     def document(self, document_id: str) -> Document:
         with self.connect() as db:
-            row = db.execute("SELECT manifest FROM documents WHERE document_id=?", (document_id,)).fetchone()
+            row = db.execute(
+                "SELECT manifest FROM documents WHERE document_id=?", (document_id,)
+            ).fetchone()
         if row is None:
             raise ValueError("Unknown document ID")
         return from_dict(Document, json.loads(row[0]))

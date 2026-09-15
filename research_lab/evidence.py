@@ -1,7 +1,7 @@
 """Build a generator capability containing only allowlisted, timely evidence."""
 
-from dataclasses import dataclass, field
 from copy import deepcopy
+from dataclasses import dataclass, field
 
 from .corpus import Corpus, facts_from_spans
 from .schemas import Document, EvidenceSpan, Fact, Issue, Task, timestamp
@@ -31,8 +31,14 @@ def build_packet(corpus: Corpus, task: Task) -> EvidencePacket:
             raise AccessDenied("Allowed-source manifest hash mismatch")
         if document.available_at is None or timestamp(document.available_at) > cutoff:
             code = "unknown_availability" if document.available_at is None else "late_source"
-            issues.append(Issue(code=code, message="A source was withheld by the information cutoff.",
-                                stage="retrieval", artifact_id=document.document_id))
+            issues.append(
+                Issue(
+                    code=code,
+                    message="A source was withheld by the information cutoff.",
+                    stage="retrieval",
+                    artifact_id=document.document_id,
+                )
+            )
             continue
         source_spans = corpus.spans(document.document_id)
         source_facts = facts_from_spans(source_spans)
@@ -41,12 +47,24 @@ def build_packet(corpus: Corpus, task: Task) -> EvidencePacket:
         for fact in source_facts:
             if fact.available_at is None or timestamp(fact.available_at) > cutoff:
                 withheld_spans.update(fact.source_span_ids)
-                issues.append(Issue(code="fact_availability", stage="retrieval", artifact_id=fact.fact_id,
-                                    message="A financial row was withheld by the information cutoff."))
+                issues.append(
+                    Issue(
+                        code="fact_availability",
+                        stage="retrieval",
+                        artifact_id=fact.fact_id,
+                        message="A financial row was withheld by the information cutoff.",
+                    )
+                )
             elif fact.entity_id != task.entity_id:
                 withheld_spans.update(fact.source_span_ids)
-                issues.append(Issue(code="entity_mismatch", stage="normalization", artifact_id=fact.fact_id,
-                                    message="A financial row belongs to a different entity."))
+                issues.append(
+                    Issue(
+                        code="entity_mismatch",
+                        stage="normalization",
+                        artifact_id=fact.fact_id,
+                        message="A financial row belongs to a different entity.",
+                    )
+                )
             else:
                 kept_facts.append(fact)
         spans.extend(s for s in source_spans if s.span_id not in withheld_spans)
@@ -76,6 +94,7 @@ class EvidenceView:
     def search_evidence(self, query: str) -> list[EvidenceSpan]:
         self._meter.reserve(tool_calls=1)
         words = set(query.casefold().split())
-        matches = [s for s in self._spans.values() if words and all(w in s.text.casefold() for w in words)]
+        matches = [
+            s for s in self._spans.values() if words and all(w in s.text.casefold() for w in words)
+        ]
         return deepcopy(matches)
-

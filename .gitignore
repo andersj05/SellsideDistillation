@@ -12,5 +12,15 @@ data/incoming/*
 private_eval/
 runs/
 exports/
-.coverage
-
+.coverage*
+coverage.xml
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+build/
+dist/
+*.egg-info/
+*.sqlite3*
+*.db
+*.log

@@ -1,9 +1,9 @@
+import json
+import unittest
 from dataclasses import asdict
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
-import json
-import unittest
 
 from research_lab.budget import BudgetExceeded, BudgetMeter
 from research_lab.corpus import Corpus
@@ -38,7 +38,9 @@ class BoundaryTests(unittest.TestCase):
         source = self.root / "sample.md"
         source.write_text("Original evidence", encoding="utf-8")
         doc = self.corpus.ingest(source, role="discovery")
-        (self.corpus.derived / f"{doc.document_id}.json").write_text('{"spans":["Injected answer"]}', encoding="utf-8")
+        (self.corpus.derived / f"{doc.document_id}.json").write_text(
+            '{"spans":["Injected answer"]}', encoding="utf-8"
+        )
         self.assertEqual(self.corpus.spans(doc.document_id)[0].text, "Original evidence")
         (self.corpus.originals / doc.content_sha256).write_text("Tampered", encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "hash mismatch"):
@@ -47,10 +49,21 @@ class BoundaryTests(unittest.TestCase):
     def test_hidden_source_rejected_before_content_read(self):
         path = self.root / "hidden.txt"
         path.write_text("ANSWER_CANARY_702", encoding="utf-8")
-        doc = self.corpus.ingest(path, role="locked_evaluation", available_at="2026-01-01T00:00:00Z")
-        task = Task(task_id="boundary", entity_id="x", question="Neutral question", as_of="2026-03-01T00:00:00Z",
-                    allowed_sources=[SourceRef(document_id=doc.document_id, content_sha256=doc.content_sha256)])
-        with patch.object(self.corpus, "read_bytes", side_effect=AssertionError("hidden payload read")):
+        doc = self.corpus.ingest(
+            path, role="locked_evaluation", available_at="2026-01-01T00:00:00Z"
+        )
+        task = Task(
+            task_id="boundary",
+            entity_id="x",
+            question="Neutral question",
+            as_of="2026-03-01T00:00:00Z",
+            allowed_sources=[
+                SourceRef(document_id=doc.document_id, content_sha256=doc.content_sha256)
+            ],
+        )
+        with patch.object(
+            self.corpus, "read_bytes", side_effect=AssertionError("hidden payload read")
+        ):
             with self.assertRaises(AccessDenied):
                 build_packet(self.corpus, task)
 
@@ -61,9 +74,18 @@ class BoundaryTests(unittest.TestCase):
             if n:
                 path.write_text("SECOND_LATE_CONTENT_CANARY", encoding="utf-8")
             doc = self.corpus.ingest(path, role="development", available_at=date)
-            task = Task(task_id="boundary", entity_id="x", question="Neutral question", as_of="2026-03-01T00:00:00Z",
-                        allowed_sources=[SourceRef(document_id=doc.document_id, content_sha256=doc.content_sha256)])
-            with patch.object(self.corpus, "read_bytes", side_effect=AssertionError("late payload read")):
+            task = Task(
+                task_id="boundary",
+                entity_id="x",
+                question="Neutral question",
+                as_of="2026-03-01T00:00:00Z",
+                allowed_sources=[
+                    SourceRef(document_id=doc.document_id, content_sha256=doc.content_sha256)
+                ],
+            )
+            with patch.object(
+                self.corpus, "read_bytes", side_effect=AssertionError("late payload read")
+            ):
                 packet = build_packet(self.corpus, task)
             self.assertFalse(packet.spans)
             self.assertNotIn("CONTENT_CANARY", json.dumps(asdict(packet)))
@@ -105,7 +127,9 @@ class BoundaryTests(unittest.TestCase):
 
     def test_budget_reserves_before_dispatch_and_records_failed_call(self):
         meter = BudgetMeter(BudgetLimits(max_tool_calls=1))
-        meter.reserve(tool_calls=1)  # The dispatched tool may fail; the reservation remains counted.
+        meter.reserve(
+            tool_calls=1
+        )  # The dispatched tool may fail; the reservation remains counted.
         with self.assertRaises(BudgetExceeded):
             meter.reserve(tool_calls=1)
         self.assertEqual(meter.usage()["tool_calls"], "1")
