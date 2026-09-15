@@ -1,6 +1,6 @@
 # Data contracts (schema 1.0)
 
-The runtime validates JSON types, unknown fields, versions, finite decimal strings, dates, source hashes, and core invariants. Schema versions other than 1.0 fail explicitly; there is no silent migration.
+The runtime validates direct dataclass construction as well as decoded JSON: types, enum values, unknown fields, versions, decimal strings, dates, source hashes, and core invariants. JSON rejects duplicate keys and non-finite constants. Unsupported objects are not coerced into strings. Schema versions other than 1.0 fail explicitly; there is no silent migration.
 
 | Record | Meaning |
 | --- | --- |
@@ -37,6 +37,8 @@ synthetic_company,revenue,1200,"1,200",USD,million,2026-01-01,2026-12-31,fiscal_
 
 Values are decimal strings. Ratios use `0.20` for 20%; the original `displayed_value` can retain `20%`. Intake does not automatically parse financial punctuation or infer scale from a footnote. Ordinary CSV remains inspectable without being treated as normalized facts.
 
+The fixture decimal grammar accepts optional sign, decimal point, and scientific exponent. It limits input strings to 96 characters, coefficients to 64 digits, adjusted exponent to at most 48, and stored exponent to at least -64. Whitespace and digit separators are rejected. Arithmetic uses a private 64-digit, half-even context; display quantizes to cents with half-up rounding. Equivalent decimal spellings compare by value.
+
 Supported units: `USD`, `shares`, `ratio`, `multiple`. Supported scales: `one`, `million`, `billion`. The initial operation requires USD millions and diluted shares in millions. It deliberately rejects individual-share inputs until an explicit normalization step is available.
 
 The operation accepts matching entity, period, period type, accounting basis, and metric-definition version. Historical actuals, guidance, and consensus cannot silently replace fixture forecasts/assumptions. Negative pretax income is outside the deliberately simple tax model.
@@ -52,3 +54,5 @@ Publication and first availability are distinct fields. Missing availability sta
 `observed` means present in the source; it does not mean true. `inferred` means a reconstruction hypothesis. `proposed` means a lab procedure or newly calculated analytical statement. Verification is a separate dimension.
 
 The fixture's verified forecast claims mean that the displayed arithmetic and closed-form statements were checked against invented inputs. They are not verified predictions. Human review, broad citation entailment, analytical usefulness, and correction effort remain pending.
+
+Passing the closed fixture grader requires all three scenarios and 15 numerical outputs, supported claims for all required questions, and complete matching fact/span/calculation lineage. Unknown claims remain unresolved. Evaluations record their grader version, grader source hash, and oracle hash. Every regrade is a distinct derivative artifact.

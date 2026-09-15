@@ -24,3 +24,4 @@ dist/
 *.sqlite3*
 *.db
 *.log
+audit-requirements.txt

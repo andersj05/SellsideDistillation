@@ -1,0 +1,59 @@
+{
+  "completeness": "complete",
+  "deferred": [],
+  "documentType": "codex-security.coverage",
+  "excludePaths": [],
+  "explicitExclusions": [],
+  "includePaths": [
+    "."
+  ],
+  "inventoryStrategy": "repository",
+  "mode": "repository",
+  "openQuestions": [],
+  "scanId": "fb166f1a-76b7-477b-bd8e-d808723512a2",
+  "schemaVersion": "1.0",
+  "surfaces": [
+    {
+      "disposition": "no_issue_found",
+      "id": "surface_independent-full-repository-baseline",
+      "label": "Independent full repository baseline",
+      "notes": "Independent baseline fully audited 35 tracked files (all code, tests, configuration, fixture and supporting files other than the original handoff). No network, arbitrary code evaluation, unsafe deserialization, or external credential route exists. Source admission, hashed paths, parameterized SQL, frozen replay and escaped HTML were traced: research_lab/corpus.py:103-158; evidence.py:22-80; rendering.py:29-156; runtime.py:43-68. Parent reviewed the handoff.",
+      "receiptRefs": []
+    },
+    {
+      "disposition": "no_issue_found",
+      "id": "surface_third-party-source-to-evidence-filesystem-and-browser-boundaries",
+      "label": "Third-party source to evidence, filesystem and browser boundaries",
+      "notes": "Focused worker fully reviewed README, all 15 implementation modules and three boundary/artifact/pipeline tests. Document authors cannot set operator roles or task allowlists. Corpus IDs are content-derived and SQL is parameterized (corpus.py:103-138); fact provenance is generated (corpus.py:42-60); evidence gates precede payload reads (evidence.py:24-54); HTML attributes and text are escaped (rendering.py:50-154); action dispatch is fixed (adapter.py:33-59, finance.py:77-83). No supported document-author capability gain found.",
+      "receiptRefs": []
+    },
+    {
+      "disposition": "no_issue_found",
+      "id": "surface_architecture-and-effective-resources",
+      "label": "Architecture and effective resources",
+      "notes": "Independent architecture worker supplied preserved six-field threat model and consumer/resource mapping. PROJECT inputs remain in source checkout while resolved --root directs output storage (fixtures.py:11, cli.py:20-65, runtime.py:23-29). Generator receives filtered copies and no evaluator argument; no OS isolation is claimed (runtime.py:103-121, README.md:99). Architecture mapping is not itself audited file coverage.",
+      "receiptRefs": []
+    },
+    {
+      "disposition": "not_applicable",
+      "id": "surface_evaluator-readiness-and-resource/replay-limitations",
+      "label": "Evaluator readiness and resource/replay limitations",
+      "notes": "Non-security correctness work identified for implementation: unknown claim IDs can count toward readiness without 15 numeric outputs (evaluation.py:145-146,203-223); empty lineage lists pass all() existence checks; run tool inventory omits packet-only search (schemas.py:302, evidence.py:76). Whole-file intake, cooperative budgets, and unsigned local manifests are documented local limitations. No additional attacker authority or shared-service exposure established.",
+      "receiptRefs": []
+    },
+    {
+      "disposition": "no_issue_found",
+      "id": "surface_independent-baseline-local-cli-storage-and-evidence-tools",
+      "label": "Independent baseline: local CLI, storage, and evidence tools",
+      "notes": "The baseline fully audited all 15 implementation modules, four test files, and 16 supporting tracked files. SQL binds values; source hashes and role/time filters gate reads; the deterministic adapter receives only copied evidence; HTML source content is escaped. No cross-principal exploit is supported. Evidence: research_lab/corpus.py:103-150, evidence.py:22-80, rendering.py:29-156, runtime.py:23-29,51-68,103-123. Handoff document remains for parent coverage.",
+      "receiptRefs": []
+    },
+    {
+      "disposition": "not_applicable",
+      "id": "surface_evaluator-readiness-and-claim-lineage-correctness",
+      "label": "Evaluator readiness and claim lineage correctness",
+      "notes": "Baseline identified a non-security correctness gap: evaluation.py:145-146 skips unknown claims and :203-223 counts questions by ID without requiring numeric coverage; the current adapter uses distinct gap_* IDs. Parent independently observed empty lineage arrays also pass existence-only checks at :136-144. These will be repaired under the user's broader correctness audit after the fixed-revision security scan. No live or hostile model boundary exists.",
+      "receiptRefs": []
+    }
+  ]
+}

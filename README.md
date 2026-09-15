@@ -1,5 +1,7 @@
 # SellsideDistillation
 
+[![CI](https://github.com/andersj05/SellsideDistillation/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/andersj05/SellsideDistillation/actions/workflows/ci.yml)
+
 A local lab for investigating whether research reports can yield useful, reusable research methods.
 
 **Implemented: the handoff's offline foundation milestone.** It ingests synthetic source packets, calculates a forecast and valuation bridge, produces evidence-linked reports, independently evaluates them, and saves a local review bundle. There are no runtime dependencies, model credentials, or hosted calls.
@@ -20,11 +22,25 @@ py -3.12 -m research_lab demo
 On macOS/Linux, replace `py -3.12` with `python3`. With `uv` and a supported Python already installed:
 
 ```powershell
-uv sync --frozen --offline
-uv run --frozen --offline python -m research_lab demo
+uv sync --frozen --offline --no-dev
+uv run --frozen --offline --no-dev python -m research_lab demo
 ```
 
-The project is a source checkout, not an installed `lab` executable. `uv.lock` locks an empty dependency graph; the Python version is recorded in every run.
+The project is a source checkout, not an installed `lab` executable. The runtime dependency graph is empty; `uv.lock` also pins development tools. The Python version is recorded in every run.
+
+## Development
+
+Use `feat/<feature-name>` branches from `dev`. Merge pull requests into `dev`, then promote `dev` into `main`. Commit small, tested changes frequently and push the feature branch regularly.
+
+```powershell
+uv sync --locked
+git config --local core.hooksPath .githooks
+uv run --frozen --offline python scripts/check.py
+```
+
+CI requires Ruff formatting/lint, fully annotated application functions checked by mypy, repository content checks, a dependency audit, and tests with at least 85% combined statement/branch coverage. Tests run on Windows and Linux with Python 3.12, 3.13, and 3.14.
+
+See [CONTRIBUTING](CONTRIBUTING.md) for the full workflow and [the audit record](docs/audit-2026-09-15.md) for findings, fixes, and limitations.
 
 ## What the demonstration checks
 
@@ -75,7 +91,7 @@ Place files in **`data/incoming/`**. Intake accepts:
 - `.csv`: native records with column names retained. Financial normalization requires the explicit schema in [the data dictionary](docs/data_dictionary.md).
 - `.pdf`: originals are hashed, copied, and inventoried with `pending_parser` status. PDF text, tables, OCR, images, and page geometry are not yet extracted.
 
-Incoming originals remain unchanged. Managed copies are content-addressed by SHA-256 in `data/originals/`; aliases share the same document identity. Exact duplicates cannot cross corpus roles. Near-duplicate/report-series grouping is still manual.
+Incoming originals remain unchanged. Managed copies are content-addressed by SHA-256 in `data/originals/`; aliases share the same document identity. Imports publish complete source objects atomically and serialize inventory writes. Intake is capped at 64 MiB per source. Exact duplicates cannot cross corpus roles. Near-duplicate/report-series grouping is still manual.
 
 Publication and availability times stay unknown unless explicitly supplied. For dated sources, pass `--published-at`, `--available-at`, and `--availability-evidence`. Timestamps require a timezone. Unknown or late availability is rejected from task evidence before source content is read.
 
@@ -98,7 +114,7 @@ exports/           Derived evaluations (ignored)
 
 The adapter gets an evidence capability containing only allowed facts/spans. It gets no corpus object, evaluator path, network tool, or host-filesystem tool. This is a tested application/tool boundary for the bundled deterministic adapter, **not an OS sandbox for arbitrary Python or a locked live evaluation**. The public synthetic answers are known test fixtures.
 
-Runs capture task/source/protocol/playbook/code/lock hashes, resource counts, issues, checkpoints, exact outputs, and an artifact-integrity manifest. Replay verifies those saved bytes. It never resumes a model or fetches data. Checkpoints preserve partial work; automatic crash resumption, signed immutability, and live refresh are not implemented.
+Runs capture task/source/protocol/playbook/code/lock hashes, resource counts, issues, checkpoints, exact outputs, and an artifact-integrity manifest. Replay verifies those saved bytes. It never resumes a model or fetches data. Comparisons journal every planned attempt, retain setup/grading/rendering failures, and continue subsequent attempts. Regrades create distinct exports with grader and oracle hashes. Recovery writes depend on writable storage; automatic crash resumption, signed immutability, and live refresh are not implemented.
 
 Financial output checks and the closed synthetic prose audit do not establish general citation entailment, forecast validity, analytical usefulness, or expert approval. Those measures are shown as unassessed.
 
