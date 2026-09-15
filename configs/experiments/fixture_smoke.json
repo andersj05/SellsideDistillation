@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0",
+  "protocol_version": "fixture_smoke_v1",
+  "purpose": "Development plumbing check; no model performance or transfer claim.",
+  "variants": ["generic", "candidate"],
+  "cases": ["clean", "missing_prior", "share_scale", "conflicting_margin", "late_source", "unsupported_sentence"],
+  "replicates": 1,
+  "model_id": "deterministic-fixture-v1",
+  "evidence_policy": "Identical frozen source packet and cutoff within each case pair",
+  "primary_measures": ["financial_identity_checks", "required_question_coverage", "final_prose_inventory", "resource_use"],
+  "critical_failures": ["wrong_number", "incompatible_definition", "out_of_boundary_source", "unregistered_prose"],
+  "missing_data": "Retain diagnostic scores and mark the run incomplete.",
+  "failed_runs": "Preserve every attempt; do not regenerate selected failures.",
+  "human_review": "Pending; analytical usefulness and citation entailment are unassessed.",
+  "interpretation": "Both variants use scripted answers from the same capability-limited fixture adapter. The synthetic candidate adds a redundant explicit scenario check."
+}
