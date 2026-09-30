@@ -2,11 +2,11 @@
 
 [![CI](https://github.com/andersj05/SellsideDistillation/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/andersj05/SellsideDistillation/actions/workflows/ci.yml)
 
-A local lab for investigating whether research reports can yield useful, reusable research methods.
+A local lab for building evidence-linked research, evaluating it, and testing whether lessons from example reports help new assignments. Analytical methods adapt to the company and research task.
 
-**Implemented: the handoff's offline foundation milestone.** It ingests synthetic source packets, calculates a forecast and valuation bridge, produces evidence-linked reports, independently evaluates them, and saves a local review bundle. There are no runtime dependencies, model credentials, or hosted calls.
+**Implemented: the offline fixture lab and detailed local PDF capture.** Fixture mode ingests synthetic source packets, calculates a forecast and valuation bridge, produces evidence-linked reports, independently evaluates them, and saves a local review bundle. Fixture mode has no runtime dependencies, model credentials, or hosted calls; PDF capture uses optional local dependencies.
 
-Real-report extraction, analyst review, live agent baselines, and claims of methodology transfer remain pending. The candidate playbook is inferred from an explicitly invented discovery note.
+Optional local PDF capture now retains native text, OCR, page images, table candidates, geometry, and inspectable evidence spans. Source semantics and analyst review, live agent baselines, and claims of methodology transfer remain pending. The fixture candidate playbook is inferred from an explicitly invented discovery note; real PDFs do not become a fixed analytical workflow.
 
 ## Run it
 
@@ -89,13 +89,24 @@ Place files in **`data/incoming/`**. Intake accepts:
 
 - `.md` and `.txt`: UTF-8 text with original line locations.
 - `.csv`: native records with column names retained. Financial normalization requires the explicit schema in [the data dictionary](docs/data_dictionary.md).
-- `.pdf`: originals are hashed, copied, and inventoried with `pending_parser` status. PDF text, tables, OCR, images, and page geometry are not yet extracted.
+- `.pdf`: originals are hashed, copied, and inventoried with `pending_parser` status. The optional `extract-pdf` command captures native text, local OCR, table candidates, page images, and geometry into a separately registered review bundle.
 
 Incoming originals remain unchanged. Managed copies are content-addressed by SHA-256 in `data/originals/`; aliases share the same document identity. Imports publish complete source objects atomically and serialize inventory writes. Intake is capped at 64 MiB per source. Exact duplicates cannot cross corpus roles. Near-duplicate/report-series grouping is still manual.
 
 Publication and availability times stay unknown unless explicitly supplied. For dated sources, pass `--published-at`, `--available-at`, and `--availability-evidence`. Timestamps require a timezone. Unknown or late availability is rejected from task evidence before source content is read.
 
-`dissect` gives an inspectable transcription and section map for native-text discovery inputs. Automatic inferred-rule generation is intentionally limited to the bundled synthetic note. A real PDF parser comparison and human-verified extraction sample are the next milestone.
+`dissect` gives an inspectable transcription and section map for native-text discovery inputs. For captured PDFs it exposes source information and structural candidates without inferring an analytical workflow. Automatic inferred-rule generation remains limited to the bundled synthetic note.
+
+To capture supplied reports, install the optional PDF dependencies and retain all private outputs locally:
+
+```powershell
+uv sync --locked --extra pdf
+uv run --frozen --offline python -m research_lab ingest --input report_examples --role discovery
+uv run --frozen --offline python -m research_lab extract-pdf --document DOCUMENT_ID
+uv run --frozen --offline python -m research_lab audit-extraction --document DOCUMENT_ID
+```
+
+The capture uses local Windows OCR or an installed Tesseract when available. Words and table candidates stay unverified; OCR accuracy, table meanings, chart data, and analytical usefulness require separate review. See [detailed PDF extraction](docs/pdf_extraction.md) for artifacts, integrity checks, separate reference grading, and limits.
 
 ## Storage and scope
 
@@ -110,6 +121,7 @@ data/              Private originals, SQLite inventory, extraction artifacts (ig
 private_eval/      Evaluator reference copies (ignored)
 runs/              Separate run bundles and comparisons (ignored)
 exports/           Derived evaluations (ignored)
+report_examples/   Supplied private reports (ignored and blocked by repository checks)
 ```
 
 The adapter gets an evidence capability containing only allowed facts/spans. It gets no corpus object, evaluator path, network tool, or host-filesystem tool. This is a tested application/tool boundary for the bundled deterministic adapter, **not an OS sandbox for arbitrary Python or a locked live evaluation**. The public synthetic answers are known test fixtures.

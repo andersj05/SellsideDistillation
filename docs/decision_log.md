@@ -18,3 +18,11 @@ These are local design choices for Milestone 0, not research findings.
 | Windows file behavior | Tests exposed unclosed SQLite handles; the workspace demo also encountered a transient atomic-replace lock. | Close connections explicitly. Bound retries to recognized Windows sharing/access errors; preserve the prior artifact if replacement fails. |
 
 No third-party API, benchmark release, or repository implementation was adopted in this milestone. External API/version research is deferred to the first parser/model integration decision.
+
+## Detailed PDF capture milestone
+
+The owner prioritized comprehensive source extraction before generation and evaluation, and explicitly rejected locking real research into an exact reusable analytical pattern. The analytical method must adapt to the company and research task. Real-report dissection therefore exposes observations and structural candidates without compiling rules.
+
+Use a pinned optional pdfplumber/PDFium route for native geometry and local rendering, plus native Windows OCR or an installed Tesseract for full pages and substantial image crops. Keep both transcriptions, source visuals, cell candidates, review gaps, and provenance. Adopt a more structured parser only if reviewed evidence shows an improvement worth its dependencies and correction effort.
+
+Bind extraction manifests to corpus registrations so an editable derived cache cannot bypass evidence provenance. Keep references separate from capture, preserve draft versus reviewed status, and label exact text-presence checks as component diagnostics. Do not interpret captured coverage as financial, semantic, or research-quality validation. Optional reusable rules remain future, scoped research hypotheses rather than mandatory planning steps.

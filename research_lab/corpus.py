@@ -3,16 +3,25 @@
 import csv
 import io
 import json
+import re
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
 from .schemas import Document, EvidenceSpan, Fact
-from .serde import atomic_write, digest, encode, from_dict, load_json, write_json
+from .serde import (
+    atomic_write,
+    digest,
+    encode,
+    from_dict,
+    load_json,
+    object_hash,
+    write_json,
+)
 
 SUPPORTED_INPUTS = {".md", ".txt", ".csv", ".pdf"}
 MAX_SOURCE_BYTES = 64 * 1024 * 1024
@@ -122,6 +131,11 @@ class Corpus:
                 CREATE TABLE IF NOT EXISTS aliases (
                     document_id TEXT NOT NULL, filename TEXT NOT NULL,
                     PRIMARY KEY (document_id, filename));
+                CREATE TABLE IF NOT EXISTS pdf_extractions (
+                    extraction_id TEXT PRIMARY KEY, document_id TEXT NOT NULL,
+                    manifest_hash TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS active_pdf_extractions (
+                    document_id TEXT PRIMARY KEY, extraction_id TEXT NOT NULL);
             """)
             if (
                 db.execute("SELECT value FROM metadata WHERE key='schema_version'").fetchone()[0]
@@ -228,7 +242,105 @@ class Corpus:
     def spans(self, document_id: str) -> list[EvidenceSpan]:
         # Re-extraction from hashed originals makes derived-cache edits non-authoritative.
         document = self.document(document_id)
+        if Path(document.original_filename).suffix.lower() == ".pdf":
+            captured = self.pdf_extraction(document_id)
+            if captured is None:
+                return []
+            directory, manifest = captured
+            spans = [
+                from_dict(EvidenceSpan, load_json(line))
+                for line in (directory / "spans.jsonl").read_text(encoding="utf-8").splitlines()
+            ]
+            if len({s.span_id for s in spans}) != len(spans) or any(
+                s.document_id != document_id
+                or s.document_sha256 != document.content_sha256
+                or s.page_index is None
+                or s.page_index >= manifest["counts"]["pages"]
+                for s in spans
+            ):
+                raise ValueError("PDF evidence lineage or span inventory mismatch")
+            return spans
         return extract(document, self.read_bytes(document_id))
+
+    def verify_pdf_directory(
+        self, document_id: str, directory: Path, expected_hash: str | None = None
+    ) -> dict:
+        document = self.document(document_id)
+        self.read_bytes(document_id)  # Verify source bytes before admitting cached observations.
+        if directory.resolve().parent != (self.derived / document_id).resolve() or not re.fullmatch(
+            r"extract_[a-f0-9]{32}", directory.name
+        ):
+            raise ValueError("PDF extraction must use a managed document directory")
+        payload = (directory / "manifest.json").read_bytes()
+        if expected_hash is not None and digest(payload) != expected_hash:
+            raise ValueError("PDF extraction manifest integrity check failed")
+        manifest = load_json(payload.decode("utf-8"))
+        if (
+            manifest["schema_version"] != "1.0"
+            or manifest["document_id"] != document_id
+            or manifest["source_sha256"] != document.content_sha256
+            or manifest["extraction_id"] != directory.name
+            or object_hash(manifest["recipe"]) != manifest["recipe_hash"]
+        ):
+            raise ValueError("PDF extraction identity or recipe mismatch")
+        files = manifest["files"]
+        actual = {
+            p.relative_to(directory).as_posix()
+            for p in directory.rglob("*")
+            if p.is_file() and p.name != "manifest.json"
+        }
+        if set(files) != actual or not {
+            "spans.jsonl",
+            "pages.jsonl",
+            "tables.jsonl",
+            "review.html",
+        } <= set(files):
+            raise ValueError("PDF extraction file inventory mismatch")
+        for name, expected in files.items():
+            candidate = directory / name
+            path = candidate.resolve()
+            if (
+                not path.is_relative_to(directory.resolve())
+                or candidate.is_symlink()
+                or digest(path.read_bytes()) != expected
+            ):
+                raise ValueError("PDF extraction artifact integrity check failed")
+        return manifest
+
+    def pdf_extraction(self, document_id: str) -> tuple[Path, dict] | None:
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT e.extraction_id, e.manifest_hash FROM pdf_extractions e "
+                "JOIN active_pdf_extractions a ON a.extraction_id=e.extraction_id "
+                "WHERE a.document_id=? AND e.document_id=?",
+                (document_id, document_id),
+            ).fetchone()
+        if row is None:
+            return None
+        directory = self.derived / document_id / row[0]
+        return directory, self.verify_pdf_directory(document_id, directory, row[1])
+
+    def register_pdf_extraction(self, document_id: str, directory: Path) -> None:
+        manifest = self.verify_pdf_directory(document_id, directory)
+        document = replace(
+            self.document(document_id),
+            page_count=manifest["counts"]["pages"],
+            extraction_status="extracted",
+            review_status="pending_semantic_review",
+        )
+        with self.connect() as db:
+            db.execute(
+                "INSERT INTO pdf_extractions VALUES (?, ?, ?)",
+                (directory.name, document_id, digest((directory / "manifest.json").read_bytes())),
+            )
+            db.execute(
+                "INSERT OR REPLACE INTO active_pdf_extractions VALUES (?, ?)",
+                (document_id, directory.name),
+            )
+            db.execute(
+                "UPDATE documents SET manifest=? WHERE document_id=?",
+                (encode(document).decode(), document_id),
+            )
 
     def inventory(self) -> list[Document]:
         with self.connect() as db:

@@ -11,6 +11,7 @@ from pathlib import Path
 
 from .corpus import SUPPORTED_INPUTS, Corpus
 from .evaluation import evaluate_bundle, oracle_for
+from .extraction_evaluation import evaluate_extraction
 from .fixtures import CASES
 from .playbooks import dissect
 from .runtime import compare, configuration, find_run, run_fixture, verify_run
@@ -41,12 +42,27 @@ def parser() -> argparse.ArgumentParser:
     )
     ingest.add_argument("--published-at")
     ingest.add_argument("--available-at")
+    ingest.add_argument("--report-family", default="unknown")
     ingest.add_argument(
         "--availability-evidence", default="User-supplied metadata; not independently reviewed"
     )
     for name in ("inspect", "dissect"):
         sub = commands.add_parser(name)
         sub.add_argument("--document", required=True)
+    capture = commands.add_parser(
+        "extract-pdf", help="Capture PDF text, OCR, geometry, and review pages locally"
+    )
+    capture.add_argument("--document", required=True)
+    capture.add_argument("--ocr", choices=["auto", "none", "windows", "tesseract"], default="auto")
+    capture.add_argument("--dpi", type=int, default=300)
+    capture.add_argument(
+        "--force", action="store_true", help="Preserve the prior extraction and create a new one"
+    )
+    audit = commands.add_parser(
+        "audit-extraction", help="Check a frozen extraction against separate located text anchors"
+    )
+    audit.add_argument("--document", required=True)
+    audit.add_argument("--reference", type=Path)
     run = commands.add_parser("run", help="Run one deterministic synthetic assignment")
     run.add_argument("--case", choices=CASES, default="clean")
     run.add_argument("--variant", choices=["generic", "candidate"], default="generic")
@@ -62,7 +78,8 @@ def parser() -> argparse.ArgumentParser:
 
 
 def output(value: object) -> None:
-    print(json.dumps(value, indent=2, ensure_ascii=False))
+    # ASCII JSON escapes preserve source Unicode on legacy Windows stdout encodings.
+    print(json.dumps(value, indent=2, ensure_ascii=True))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -83,7 +100,7 @@ def main(argv: list[str] | None = None) -> int:
                     "runtime_dependencies": [],
                     "input_directory": str(root / "data" / "incoming"),
                     "native_extraction": [".txt", ".md", ".csv"],
-                    "pdf": "Immutable intake only; parser study pending",
+                    "pdf": "Optional local PDF capture via extract-pdf; OCR and semantics require review",
                     "live_model": "Not implemented; no credentials required for fixture mode",
                 }
             )
@@ -106,6 +123,7 @@ def main(argv: list[str] | None = None) -> int:
                     available_at=args.available_at,
                     published_at=args.published_at,
                     availability_evidence=args.availability_evidence,
+                    report_family=args.report_family,
                 )
                 for p in paths
             ]
@@ -120,6 +138,37 @@ def main(argv: list[str] | None = None) -> int:
             )
         elif args.command == "dissect":
             output(dissect(Corpus(root), args.document))
+        elif args.command == "extract-pdf":
+            from .pdf_extraction import ExtractionOptions, extract_pdf
+
+            result = extract_pdf(
+                Corpus(root),
+                args.document,
+                options=ExtractionOptions(ocr=args.ocr, dpi=args.dpi),
+                force=args.force,
+            )
+            output(
+                {
+                    **result,
+                    "review": str(Path(result["directory"]) / "review.html"),
+                    "status": "captured_pending_review",
+                }
+            )
+        elif args.command == "audit-extraction":
+            result = evaluate_extraction(Corpus(root), args.document, args.reference)
+            destination = (
+                root / "exports" / f"{args.document}.{uuid.uuid4().hex}.extraction_evaluation.json"
+            )
+            write_json(destination, result)
+            output(
+                {
+                    "evaluation": str(destination),
+                    "status": result["status"],
+                    "checks": len(result["checks"]),
+                    "passed": sum(c["passed"] for c in result["checks"]),
+                }
+            )
+            return 1 if result["status"] == "needs_review" else 0
         elif args.command == "run":
             result = run_fixture(
                 root, case=args.case, variant=args.variant, config=configuration(args.config)

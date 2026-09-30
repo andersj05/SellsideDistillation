@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased: detailed PDF capture
+
+- Added optional local PDF capture of native text, OCR, page images, drawing geometry, table candidates, source locations, and review pages.
+- Bound capture manifests to corpus registrations and retained independent, separately supplied extraction-reference grading.
+- Kept real-report dissection observational and task-adaptive; no real-report analytical workflow is inferred.
+- Protected private `report_examples/` inputs with Git ignore and repository-content checks.
+- Refreshed the locked tooling HTTP dependency after the dependency audit identified a patched release.
+
 ## 0.1.0 — 2026-09-15
 
 - Established the offline research fixture lab: source intake, evidence filtering, financial calculations, reports, independent evaluation, comparisons, and replay.
