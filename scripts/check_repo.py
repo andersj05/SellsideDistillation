@@ -9,7 +9,7 @@ import tomllib
 from pathlib import Path, PurePosixPath
 
 ROOT = Path(__file__).resolve().parents[1]
-PRIVATE_ROOTS = {"data", "private_eval", "runs", "exports", ".venv", ".uv-cache"}
+PRIVATE_ROOTS = {"data", "private_eval", "runs", "exports", "report_examples", ".venv", ".uv-cache"}
 ALLOWED_PRIVATE_FILES = {"data/incoming/.gitkeep"}
 SECRET_PATTERNS = (
     re.compile(rb"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
