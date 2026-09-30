@@ -26,18 +26,28 @@ The initial Windows test pass exposed SQLite handles remaining open after transa
 
 Browser visual QA remains pending: the browser tool rejected the local-file URL under its URL security policy. HTML structure and local links can be checked without opening a browser. Do not interpret generated `review.html` files as visually approved reports.
 
-## Next milestone: real-report extraction study
+## Detailed PDF capture
+
+Implemented optional local PDF capture with pinned pdfplumber/PDFium dependencies, full-page and substantial-image OCR, page visuals, native/OCR word geometry, table/cell candidates, drawing geometry, and inspectable evidence spans. Hashes in the trusted corpus registration bind the derived manifest and files. Forced and changed-recipe captures preserve previous bundles. Separate extraction-reference checks retain draft versus reviewed status and do not grade research quality.
+
+Real-PDF dissection exposes observations and structural candidates without creating analytical rules. The owner prioritized source detail first and task/company-dependent analytical methods. See [the extraction guide](pdf_extraction.md) for routes and limitations.
+
+The extraction route has local invented-PDF regression checks covering native and OCR provenance, page/cell geometry, malformed input, cutoff enforcement, cache tampering, preserved prior captures, safe HTML rendering, and separate reference grading. This does not establish human-reviewed OCR accuracy or semantic completeness.
+
+The required offline check passes locally with 58 tests and 90% coverage, plus Ruff, mypy, and repository content checks. The updated locked development/PDF dependency set passes the separate dependency audit. Cross-platform validation remains subject to the feature's CI run.
+
+## Next milestone: extraction review and task-specific evaluation
 
 1. Inventory supplied PDFs and workpapers from `data/incoming/`; determine report family, publication/availability evidence, and related-report groups.
 2. Assign discovery/development/evaluation roles before detailed methodology extraction.
-3. Compare a lightweight native PDF parser with a structured parser on a cover page, dense financial table, chart/footnote page, and valuation page. Pin exact dependencies after testing host compatibility.
+3. Compare the implemented capture with a structured parser on a cover page, dense financial table, chart/footnote page, and valuation page when reviewed errors justify the added route.
 4. Retain page renderings and build a small human-verified sample of critical values, units, merged headers, footnotes, and locations. Measure correction effort.
-5. Dissect one real discovery report and replace the invented candidate with supported, clearly qualified rules.
+5. Define evaluation criteria and analytical choices for a bounded real assignment. Keep any proposed reusable rules optional, scoped, and reviewable; do not replace a task-adaptive method with a mandatory report-derived pattern.
 6. Configure a hosted model/data route and paid caps when authorized; add a live smoke suite and an isolated evaluator boundary before any real baseline/transfer claim.
 
 ## Deliberately pending
 
-- PDF parsing, OCR, chart extraction, full document rendering, and parser comparison.
+- Human-reviewed OCR/table accuracy, verified header/period/unit relationships, chart-series reconstruction, and structured-parser comparison.
 - Automatic real-report methodology inference and expert-corrected rules.
 - Hosted model/API integrations, licensed data, external research tools, and live baselines.
 - Arbitrary user-defined financial models, automatic scale normalization, and DCF.

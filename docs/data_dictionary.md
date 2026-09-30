@@ -17,7 +17,7 @@ The runtime validates direct dataclass construction as well as decoded JSON: typ
 
 Text locators are one-based original lines, including skipped blank lines in the numbering: `line:7`. CSV locators are one-based **logical data records**, excluding the header: `record:2`. Quoted CSV fields may span several physical lines; record IDs avoid confusing those with line numbers.
 
-PDF fields reserve a zero-based page index, printed page label, and normalized top-left bounding box `[x0, y0, x1, y1]`. They remain null for native text and CSV; the current intake does not invent PDF coordinates.
+PDF spans use a zero-based page index and normalized top-left bounding box `[x0, y0, x1, y1]` from the registered capture. Printed page labels remain unknown when footer candidates are ambiguous. These fields remain null for native text and CSV. PDF word/line spans are unverified transcriptions, not automatically normalized financial facts. Table/cell candidates and their source word IDs remain in the separate capture artifacts; see [detailed PDF extraction](pdf_extraction.md).
 
 Evidence IDs combine the document SHA-256 identity and locator. Normalized fact IDs derive from their evidence span. Different vintages and conflicting rows remain separate records.
 
