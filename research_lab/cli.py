@@ -78,7 +78,8 @@ def parser() -> argparse.ArgumentParser:
 
 
 def output(value: object) -> None:
-    print(json.dumps(value, indent=2, ensure_ascii=False))
+    # ASCII JSON escapes preserve source Unicode on legacy Windows stdout encodings.
+    print(json.dumps(value, indent=2, ensure_ascii=True))
 
 
 def main(argv: list[str] | None = None) -> int:

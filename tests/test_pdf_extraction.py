@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 from PIL import Image, ImageDraw
 
-from research_lab.cli import main
+from research_lab.cli import main, output
 from research_lab.corpus import Corpus
 from research_lab.evidence import build_packet
 from research_lab.extraction_evaluation import evaluate_extraction
@@ -323,6 +323,18 @@ class PdfExtractionTests(unittest.TestCase):
             len(list((self.corpus.derived / doc.document_id).glob("*/failure.json"))), 1
         )
         self.assertIsNone(self.corpus.pdf_extraction(doc.document_id))
+
+
+class CliUnicodeTests(unittest.TestCase):
+    def test_source_unicode_round_trips_through_legacy_windows_stdout(self):
+        raw = io.BytesIO()
+        stream = io.TextIOWrapper(raw, encoding="cp1252")
+        value = {"source_heading": "Invented \u25cf \u7814\u7a76"}
+        with redirect_stdout(stream):
+            output(value)
+        stream.flush()
+        self.assertEqual(json.loads(raw.getvalue().decode("ascii")), value)
+        stream.detach()
 
 
 class OcrTests(unittest.TestCase):
