@@ -6,7 +6,7 @@ requires-python = ">=3.12,<3.15"
 dependencies = []
 
 [project.optional-dependencies]
-pdf = ["pdfplumber==0.11.9", "pypdfium2==5.13.0"]
+pdf = ["pdfplumber==0.11.9", "pypdfium2==5.14.0"]
 
 [tool.uv]
 package = false
@@ -18,7 +18,7 @@ dev = [
     "pip-audit==2.10.1",
     "ruff==0.16.7",
     "pdfplumber==0.11.9",
-    "pypdfium2==5.13.0",
+    "pypdfium2==5.14.0",
 ]
 
 [tool.ruff]
